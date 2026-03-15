@@ -4,349 +4,1056 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ASIN Harvester</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
-  :root {
-    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24;
-    --border: #2a2a3a; --accent: #f97316; --accent2: #fb923c;
-    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
-    --text: #f1f0ff; --muted: #6b6b85; --card: #13131d;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; overflow-x: hidden; }
-  body::before {
-    content: ''; position: fixed; top: -200px; right: -200px;
-    width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(249,115,22,0.08) 0%, transparent 70%);
-    pointer-events: none; z-index: 0;
-  }
+:root {
+  --bg: #0d0d14;
+  --surface: #13131e;
+  --surface2: #1c1c2e;
+  --surface3: #22223a;
+  --border: #2e2e4a;
+  --border2: #3a3a58;
+  --accent: #f97316;
+  --accent-dim: rgba(249,115,22,0.12);
+  --accent-border: rgba(249,115,22,0.35);
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.12);
+  --yellow: #f59e0b;
+  --purple: #a78bfa;
+  --text: #eeeeff;
+  --text2: #a0a0c0;
+  --text3: #606088;
+  --card: #10101a;
+  --sidebar-w: 420px;
+  --header-h: 76px;
+}
 
-  header {
-    padding: 18px 32px; display: flex; align-items: center; justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    background: rgba(10,10,15,0.85); backdrop-filter: blur(12px);
-    position: sticky; top: 0; z-index: 100;
-  }
-  .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
-  .logo-icon { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-  .logo span { color: var(--accent); }
-  .header-stats { display: flex; gap: 18px; }
-  .stat-pill { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; }
-  .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
-  .dot-orange { background: var(--accent); }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  .app { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 63px); position: relative; z-index: 1; }
+html { font-size: 16px; scroll-behavior: smooth; }
 
-  /* SIDEBAR */
-  .sidebar { border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; background: var(--surface); }
-  .sidebar::-webkit-scrollbar { width: 3px; }
-  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  .section-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-  label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 5px; }
-  input, textarea, select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 8px 10px; outline: none; transition: border-color 0.2s; }
-  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
-  textarea { resize: vertical; min-height: 90px; }
-  select option { background: var(--surface2); }
-  .field-group { margin-bottom: 12px; }
-  .field-group:last-child { margin-bottom: 0; }
-  .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
 
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); }
-  .toggle-row:last-child { border-bottom: none; }
-  .toggle-label { font-size: 12px; font-weight: 600; }
-  .toggle-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
-  .toggle { width: 38px; height: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; position: relative; transition: all 0.2s; flex-shrink: 0; }
-  .toggle.on { background: var(--accent); border-color: var(--accent); }
-  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: white; border-radius: 50%; transition: transform 0.2s; }
-  .toggle.on::after { transform: translateX(18px); }
+/* Ambient glow */
+body::before {
+  content: '';
+  position: fixed; top: -300px; right: -300px;
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, rgba(249,115,22,0.06) 0%, transparent 65%);
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed; bottom: -200px; left: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(167,139,250,0.04) 0%, transparent 65%);
+  pointer-events: none; z-index: 0;
+}
 
-  .proxy-list { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
-  .proxy-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--surface2); border-radius: 6px; margin-bottom: 4px; }
-  .proxy-status { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .proxy-addr { flex: 1; color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .proxy-ping { color: var(--green); font-size: 10px; flex-shrink: 0; }
-  .proxy-remove { cursor: pointer; color: var(--red); font-size: 12px; flex-shrink: 0; opacity: 0.5; }
-  .proxy-remove:hover { opacity: 1; }
+/* ═══════════════════════════════ HEADER ═══════════════════════════════ */
+header {
+  height: var(--header-h);
+  padding: 0 36px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13,13,20,0.92);
+  backdrop-filter: blur(20px);
+  position: sticky; top: 0; z-index: 200;
+}
 
-  .btn { width: 100%; padding: 11px; border: none; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px; }
-  .btn-primary { background: var(--accent); color: white; }
-  .btn-primary:hover:not(:disabled) { background: var(--accent2); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(249,115,22,0.4); }
-  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-sm { padding: 6px 12px; font-size: 11px; border-radius: 7px; width: auto; }
+.logo {
+  display: flex; align-items: center; gap: 16px;
+}
+.logo-icon {
+  width: 48px; height: 48px;
+  background: linear-gradient(135deg, var(--accent), #ea580c);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 4px 20px rgba(249,115,22,0.35);
+  flex-shrink: 0;
+}
+.logo-text { display: flex; flex-direction: column; gap: 1px; }
+.logo-title {
+  font-size: 1.25rem; font-weight: 800;
+  letter-spacing: -0.3px; line-height: 1.1;
+}
+.logo-title span { color: var(--accent); }
+.logo-sub { font-size: 0.72rem; color: var(--text3); font-weight: 500; letter-spacing: 0.5px; }
 
-  .chip-group { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-  .chip { padding: 4px 9px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-  .chip.selected { background: rgba(249,115,22,0.2); border-color: var(--accent); color: var(--accent); }
+.header-right { display: flex; align-items: center; gap: 12px; }
 
-  /* MAIN */
-  .main { display: flex; flex-direction: column; overflow: hidden; }
-  .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 24px; background: var(--surface); }
-  .tab { padding: 13px 18px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; position: relative; top: 1px; }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .tab:hover:not(.active) { color: var(--text); }
-  .badge { display: inline-block; background: var(--accent); color: white; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 10px; margin-left: 5px; vertical-align: middle; }
+.stat-pill {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 10px 18px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem; color: var(--text2);
+  white-space: nowrap;
+}
+.stat-pill strong { color: var(--text); font-weight: 600; }
 
-  .content { flex: 1; overflow-y: auto; padding: 22px; }
-  .content::-webkit-scrollbar { width: 4px; }
-  .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s ease-in-out infinite; }
+.dot-orange { background: var(--accent); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  .progress-section { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
-  .progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .progress-title { font-size: 14px; font-weight: 700; }
-  .progress-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
-  .status-idle { background: var(--surface2); color: var(--muted); }
-  .status-running { background: rgba(249,115,22,0.15); color: var(--accent); border: 1px solid rgba(249,115,22,0.3); }
-  .status-done { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
-  .status-error { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
-  .progress-bar-wrap { background: var(--surface2); border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 8px; }
-  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 6px; transition: width 0.4s; }
-  .progress-meta { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+/* ═══════════════════════════════ LAYOUT ═══════════════════════════════ */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: calc(100vh - var(--header-h));
+  position: relative; z-index: 1;
+  overflow: hidden;
+}
 
-  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
-  .metric { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; position: relative; overflow: hidden; }
-  .metric::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-  .metric-scraped::before { background: var(--accent); }
-  .metric-success::before { background: var(--green); }
-  .metric-failed::before { background: var(--red); }
-  .metric-rate::before { background: #818cf8; }
-  .metric-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-  .metric-value { font-size: 28px; font-weight: 800; line-height: 1; }
-  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
-  .metric-scraped .metric-value { color: var(--accent); }
-  .metric-success .metric-value { color: var(--green); }
-  .metric-failed .metric-value { color: var(--red); }
-  .metric-rate .metric-value { color: #818cf8; }
+/* ═══════════════════════════════ SIDEBAR ═══════════════════════════════ */
+.sidebar {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 28px 24px;
+  display: flex; flex-direction: column; gap: 24px;
+  background: var(--surface);
+}
+.sidebar::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
-  /* TABLE */
-  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
-  .table-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-  .table-header-left { font-size: 13px; font-weight: 700; }
-  .table-actions { display: flex; gap: 8px; align-items: center; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 9px 14px; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); background: var(--surface2); border-bottom: 1px solid var(--border); }
-  td { padding: 11px 14px; font-size: 12px; border-bottom: 1px solid rgba(42,42,58,0.5); vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(249,115,22,0.04); }
-  .asin-code { font-family: 'JetBrains Mono', monospace; font-size: 10px; background: var(--surface2); padding: 2px 7px; border-radius: 4px; color: var(--accent); }
-  .product-title { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-  .price { font-weight: 700; color: var(--green); font-family: 'JetBrains Mono', monospace; }
-  .rating-stars { color: var(--yellow); }
-  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
-  .badge-ok { background: rgba(34,197,94,0.15); color: var(--green); }
-  .badge-fail { background: rgba(239,68,68,0.15); color: var(--red); }
+/* Section */
+.section { display: flex; flex-direction: column; gap: 10px; }
+.section-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text3);
+}
+.section-label::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: var(--border);
+}
 
-  .log-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
-  .log-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-  .log-title { font-size: 12px; font-weight: 700; }
-  .log-body { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 10px 14px; max-height: 220px; overflow-y: auto; line-height: 1.7; }
-  .log-body::-webkit-scrollbar { width: 3px; }
-  .log-body::-webkit-scrollbar-thumb { background: var(--border); }
-  .log-line { display: flex; gap: 10px; }
-  .log-time { color: var(--muted); flex-shrink: 0; }
-  .log-ok { color: var(--green); }
-  .log-err { color: var(--red); }
-  .log-warn { color: var(--yellow); }
-  .log-info { color: #818cf8; }
+/* Card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+}
 
-  .export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-  .export-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; cursor: pointer; transition: all 0.2s; text-align: center; }
-  .export-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(249,115,22,0.15); }
-  .export-icon { font-size: 26px; margin-bottom: 8px; }
-  .export-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  .export-desc { font-size: 10px; color: var(--muted); }
+/* Form elements */
+label {
+  display: block;
+  font-size: 0.75rem; font-weight: 700;
+  color: var(--text3); letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
 
-  .rate-viz { display: flex; gap: 3px; flex-wrap: wrap; }
-  .rate-block { width: 12px; height: 12px; border-radius: 3px; background: var(--surface2); border: 1px solid var(--border); transition: background 0.3s; }
-  .rate-block.used { background: var(--accent); border-color: var(--accent2); }
+input[type="text"], input[type="password"], textarea, select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  padding: 12px 16px;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  line-height: 1.5;
+}
+input[type="text"]:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-dim);
+}
+textarea {
+  resize: vertical; min-height: 110px;
+  font-size: 0.88rem; line-height: 1.7;
+}
+select option { background: var(--surface2); }
 
-  .tab-pane { display: none; }
-  .tab-pane.active { display: block; }
-  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
-  .empty-icon { font-size: 42px; margin-bottom: 12px; opacity: 0.4; }
-  .empty-text { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-  .empty-sub { font-size: 12px; }
+.field { margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
 
-  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; font-weight: 600; z-index: 9999; animation: slideIn 0.3s ease; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-  .toast-ok { border-left: 3px solid var(--green); }
-  .toast-err { border-left: 3px solid var(--red); }
-  .toast-warn { border-left: 3px solid var(--yellow); }
-  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* Range sliders */
+input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface3);
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--accent-dim);
+  cursor: pointer;
+}
+.slider-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.slider-label { font-size: 0.85rem; font-weight: 600; color: var(--text2); }
+.slider-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  padding: 2px 10px; border-radius: 20px;
+}
+
+/* Toggle */
+.toggle-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.toggle-item:last-child { border-bottom: none; padding-bottom: 0; }
+.toggle-item:first-child { padding-top: 0; }
+.toggle-info { flex: 1; }
+.toggle-name { font-size: 0.92rem; font-weight: 600; color: var(--text); }
+.toggle-desc { font-size: 0.78rem; color: var(--text3); margin-top: 2px; }
+
+.toggle {
+  width: 52px; height: 28px;
+  background: var(--surface3);
+  border: 1.5px solid var(--border2);
+  border-radius: 14px;
+  cursor: pointer; position: relative;
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--accent); border-color: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: white; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+.toggle.on::after { transform: translateX(24px); }
+
+/* Chip group */
+.chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 7px 14px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 100px;
+  font-size: 0.82rem; font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+  color: var(--text2);
+}
+.chip:hover { border-color: var(--border2); color: var(--text); }
+.chip.on {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* Proxy list */
+.proxy-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.proxy-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.proxy-addr { flex: 1; font-size: 0.85rem; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-ping { font-size: 0.78rem; color: var(--green); font-weight: 600; flex-shrink: 0; }
+.proxy-rm { font-size: 1rem; color: var(--text3); cursor: pointer; flex-shrink: 0; transition: color 0.15s; }
+.proxy-rm:hover { color: var(--red); }
+.proxy-empty { font-size: 0.85rem; color: var(--text3); font-family: 'JetBrains Mono', monospace; padding: 8px 4px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 15px 20px;
+  border: none; border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem; font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+  letter-spacing: 0.3px;
+}
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #ea580c);
+  color: white;
+  box-shadow: 0 4px 18px rgba(249,115,22,0.3);
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(249,115,22,0.45);
+}
+.btn-danger {
+  background: var(--surface2);
+  color: var(--red);
+  border: 1.5px solid rgba(239,68,68,0.3);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--red-dim);
+  border-color: var(--red);
+}
+.btn-ghost {
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1.5px solid var(--border);
+  padding: 10px 18px;
+  font-size: 0.85rem;
+  width: auto;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--border2);
+  color: var(--text);
+}
+.btn-sm {
+  padding: 9px 16px;
+  font-size: 0.82rem;
+  border-radius: 9px;
+  width: auto;
+}
+
+/* Hint box */
+.hint-box {
+  padding: 12px 14px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  font-size: 0.82rem; color: var(--accent);
+  line-height: 1.5;
+}
+
+/* Add proxy row */
+.proxy-add-row { display: flex; gap: 10px; margin-top: 12px; }
+.proxy-add-row input { flex: 1; }
+
+/* ═══════════════════════════════ MAIN PANEL ═══════════════════════════════ */
+.main {
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Tab bar */
+.tabbar {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 36px;
+  background: var(--surface);
+  gap: 4px;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 20px 22px;
+  font-size: 0.9rem; font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.18s;
+  position: relative; top: 1px;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.72rem; font-weight: 700;
+  border-radius: 100px;
+  margin-left: 8px;
+  padding: 0 6px;
+}
+
+/* Content area */
+.content {
+  flex: 1; overflow-y: auto;
+  padding: 32px 36px;
+}
+.content::-webkit-scrollbar { width: 5px; }
+.content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ── Progress section ── */
+.progress-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  margin-bottom: 24px;
+}
+.progress-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.progress-title { font-size: 1.1rem; font-weight: 700; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem; font-weight: 600;
+  padding: 7px 16px; border-radius: 100px;
+}
+.status-idle  { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
+.status-running { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+.status-done  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+.status-error { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(239,68,68,0.3); }
+
+.progress-track {
+  height: 10px; background: var(--surface3);
+  border-radius: 6px; overflow: hidden;
+  margin-bottom: 12px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #fb923c);
+  border-radius: 6px;
+  transition: width 0.4s ease;
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill.running::after {
+  content: '';
+  position: absolute; top: 0; right: -60px;
+  width: 60px; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25));
+  animation: sweep 1.6s linear infinite;
+}
+@keyframes sweep { from { transform: translateX(-60px); } to { transform: translateX(60px); } }
+.progress-meta {
+  display: flex; justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem; color: var(--text3);
+}
+
+/* ── Metrics grid ── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.metric-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 20px;
+  position: relative; overflow: hidden;
+}
+.metric-card::before {
+  content: ''; position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px; border-radius: 16px 16px 0 0;
+}
+.mc-orange::before { background: linear-gradient(90deg, var(--accent), #fb923c); }
+.mc-green::before  { background: linear-gradient(90deg, var(--green), #4ade80); }
+.mc-red::before    { background: linear-gradient(90deg, var(--red), #f87171); }
+.mc-purple::before { background: linear-gradient(90deg, var(--purple), #c4b5fd); }
+
+.metric-label {
+  font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 10px;
+}
+.metric-num {
+  font-size: 2.4rem; font-weight: 800;
+  line-height: 1; letter-spacing: -1px;
+}
+.mc-orange .metric-num { color: var(--accent); }
+.mc-green  .metric-num { color: var(--green); }
+.mc-red    .metric-num { color: var(--red); }
+.mc-purple .metric-num { color: var(--purple); }
+.metric-sub {
+  font-size: 0.78rem; color: var(--text3);
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Log panel ── */
+.log-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.log-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.log-head-title { font-size: 0.95rem; font-weight: 700; }
+.log-body {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  padding: 18px 24px;
+  max-height: 260px; overflow-y: auto;
+  line-height: 1.8;
+}
+.log-body::-webkit-scrollbar { width: 4px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.log-line { display: flex; gap: 14px; }
+.log-t { color: var(--text3); flex-shrink: 0; }
+.log-ok   { color: var(--green); }
+.log-err  { color: var(--red); }
+.log-warn { color: var(--yellow); }
+.log-info { color: var(--purple); }
+
+/* ── Search discovery ── */
+.discovery-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  margin-bottom: 24px;
+}
+.discovery-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.discovery-title { font-size: 1.1rem; font-weight: 700; }
+.discovery-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; margin-bottom: 18px;
+}
+.ds-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px; text-align: center;
+}
+.ds-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+.ds-val { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+.ds-val.orange { color: var(--accent); }
+.ds-val.purple { color: var(--purple); }
+.ds-val.green  { color: var(--green); }
+
+.kw-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+}
+.kw-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-page { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text3); }
+.kw-asins { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--green); font-weight: 700; }
+.kw-total { font-size: 0.75rem; color: var(--text3); }
+
+/* ── Results table ── */
+.table-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.table-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--border);
+}
+.table-head-title { font-size: 1rem; font-weight: 700; }
+.table-actions { display: flex; gap: 12px; align-items: center; }
+.table-search {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Inter', monospace;
+  font-size: 0.88rem;
+  padding: 10px 16px;
+  outline: none;
+  width: 220px;
+  transition: border-color 0.18s;
+}
+.table-search:focus { border-color: var(--accent); }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  text-align: left;
+  padding: 14px 20px;
+  font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text3);
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td {
+  padding: 16px 20px;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(46,46,74,0.5);
+  vertical-align: middle;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(249,115,22,0.04); }
+
+.asin-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem; font-weight: 600;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  padding: 4px 10px; border-radius: 6px;
+  white-space: nowrap;
+}
+.price-val { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--green); font-size: 0.9rem; }
+.stars { color: var(--yellow); letter-spacing: 1px; }
+.ok-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--green-dim); color: var(--green);
+  border: 1px solid rgba(34,197,94,0.3);
+  padding: 4px 12px; border-radius: 100px;
+  font-size: 0.78rem; font-weight: 700;
+}
+.fail-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--red-dim); color: var(--red);
+  border: 1px solid rgba(239,68,68,0.3);
+  padding: 4px 12px; border-radius: 100px;
+  font-size: 0.78rem; font-weight: 700;
+}
+
+/* ── Empty state ── */
+.empty {
+  text-align: center;
+  padding: 80px 32px;
+  color: var(--text3);
+}
+.empty-icon { font-size: 52px; margin-bottom: 16px; opacity: 0.4; }
+.empty-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; color: var(--text2); }
+.empty-desc { font-size: 0.88rem; }
+
+/* ── Export tab ── */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.export-tile {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+.export-tile:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(249,115,22,0.15);
+}
+.export-icon { font-size: 36px; margin-bottom: 12px; }
+.export-name { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+.export-desc { font-size: 0.8rem; color: var(--text3); line-height: 1.4; }
+
+/* ── Rate viz ── */
+.rate-grid { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.rate-block {
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  transition: background 0.3s;
+}
+.rate-block.lit { background: var(--accent); border-color: #fb923c; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 22px;
+  font-size: 0.92rem; font-weight: 600;
+  z-index: 9999;
+  animation: toastIn 0.3s ease;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  max-width: 360px;
+  line-height: 1.4;
+}
+.toast-ok   { border-left: 4px solid var(--green); }
+.toast-err  { border-left: 4px solid var(--red); }
+.toast-warn { border-left: 4px solid var(--yellow); }
+@keyframes toastIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* ── Full log tab ── */
+#full-log { max-height: calc(100vh - 220px); }
+
+/* Page preset buttons */
+.page-preset {
+  padding: 5px 13px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.78rem; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+}
+.page-preset:hover { border-color: var(--accent); color: var(--accent); background: rgba(249,115,22,0.08); }
+.page-preset.active { background: rgba(249,115,22,0.18); border-color: var(--accent); color: var(--accent); }
+.page-preset-all { color: var(--accent); border-color: rgba(249,115,22,0.4); }
+.page-preset-all.active { background: rgba(249,115,22,0.22); }
+
 </style>
 </head>
 <body>
 
+<!-- ═══════════ HEADER ═══════════ -->
 <header>
   <div class="logo">
     <div class="logo-icon">🕸</div>
-    ASIN <span>Harvester</span>
+    <div class="logo-text">
+      <div class="logo-title">ASIN <span>Harvester</span></div>
+      <div class="logo-sub">Amazon Product Data Scraper</div>
+    </div>
   </div>
-  <div class="header-stats">
-    <div class="stat-pill"><div class="dot dot-green"></div><span id="hdr-conn">Connecting...</span></div>
-    <div class="stat-pill"><div class="dot dot-orange"></div><span id="hdr-proxies">0 Proxies</span></div>
-    <div class="stat-pill" style="font-family:'JetBrains Mono',monospace">⏱ <span id="hdr-timer">00:00:00</span></div>
+  <div class="header-right">
+    <div class="stat-pill">
+      <div class="dot dot-green"></div>
+      <span id="hdr-conn">Connecting…</span>
+    </div>
+    <div class="stat-pill">
+      <div class="dot dot-orange"></div>
+      <strong id="hdr-proxies">0</strong>&nbsp;Proxies
+    </div>
+    <div class="stat-pill">
+      ⏱&nbsp;<strong id="hdr-timer" style="font-family:'JetBrains Mono',monospace">00:00:00</strong>
+    </div>
   </div>
 </header>
 
+<!-- ═══════════ APP ═══════════ -->
 <div class="app">
-  <!-- SIDEBAR -->
+
+  <!-- ════ SIDEBAR ════ -->
   <div class="sidebar">
 
-    <div>
-      <div class="section-title">🎯 Scrape Targets</div>
+    <!-- Targets -->
+    <div class="section">
+      <div class="section-label">🎯 Scrape Targets</div>
       <div class="card">
-        <div class="field-group">
-          <label>TARGET MODE</label>
+        <div class="field">
+          <label>Target Mode</label>
           <select id="target-mode" onchange="updateTargetMode()">
             <option value="asin">ASIN List</option>
-            <option value="search">Search Keywords</option>
+            <option value="search">Keyword Search</option>
           </select>
         </div>
-        <div class="field-group" id="asin-field">
-          <label>ASIN CODES (one per line)</label>
+
+        <div id="asin-field" class="field">
+          <label>ASIN Codes — one per line</label>
           <textarea id="asin-input" placeholder="B08N5WRWNW&#10;B09G9FPTP1&#10;B07PDHSLM6"></textarea>
         </div>
-        <div class="field-group" id="search-field" style="display:none">
-          <label>KEYWORDS (one per line)</label>
-          <textarea id="keyword-input" placeholder="wireless earbuds&#10;gaming laptop"></textarea>
+
+        <div id="search-field" style="display:none" class="field">
+          <label>Keywords — one per line</label>
+          <textarea id="keyword-input" placeholder="wireless earbuds&#10;gaming laptop&#10;mechanical keyboard"></textarea>
         </div>
-        <div class="field-group">
-          <label>MARKETPLACE</label>
+
+        <!-- Search Options (shown in search mode only) -->
+        <div id="search-options" style="display:none">
+          <div class="field">
+            <div class="slider-row">
+              <span class="slider-label">Pages per Keyword</span>
+              <span class="slider-val" id="pages-val">5</span>
+            </div>
+
+            <!-- Slider: 1–50. 50 = ALL available pages -->
+            <input type="range" id="pages-slider" min="1" max="50" value="5"
+              oninput="syncPagesInput(this.value)" style="accent-color:var(--accent);width:100%">
+
+            <!-- Tick marks -->
+            <div style="display:flex;justify-content:space-between;margin-top:3px;padding:0 1px">
+              <span style="font-size:0.65rem;color:var(--text3)">1</span>
+              <span style="font-size:0.65rem;color:var(--text3)">10</span>
+              <span style="font-size:0.65rem;color:var(--text3)">20</span>
+              <span style="font-size:0.65rem;color:var(--text3)">30</span>
+              <span style="font-size:0.65rem;color:var(--text3)">40</span>
+              <span style="font-size:0.65rem;color:var(--accent);font-weight:700">ALL</span>
+            </div>
+
+            <!-- Quick preset buttons -->
+            <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+              <button onclick="setPages(1)"  class="page-preset">1</button>
+              <button onclick="setPages(2)"  class="page-preset">2</button>
+              <button onclick="setPages(3)"  class="page-preset">3</button>
+              <button onclick="setPages(5)"  class="page-preset">5</button>
+              <button onclick="setPages(10)" class="page-preset">10</button>
+              <button onclick="setPages(20)" class="page-preset">20</button>
+              <button onclick="setPages(50)" class="page-preset page-preset-all">ALL</button>
+            </div>
+
+            <!-- Estimate + manual input on same row -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px">
+              <div style="font-size:0.78rem;color:var(--text3)">
+                ≈ <span id="pages-est" style="font-weight:700;color:var(--text)">240</span> ASINs
+                <span id="pages-all-label" style="display:none;color:var(--accent);font-weight:700"> — scrapes until Amazon runs out</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                <label style="font-size:0.72rem;margin-bottom:0;white-space:nowrap;color:var(--text3)">exact pages:</label>
+                <input
+                  type="number" id="pages-input"
+                  min="1" max="50" value="5"
+                  oninput="syncPagesSlider(this.value)"
+                  style="width:72px;padding:6px 10px;font-size:0.88rem;text-align:center">
+              </div>
+            </div>
+          </div>
+          <div class="toggle-item">
+            <div class="toggle-info">
+              <div class="toggle-name">Include Sponsored</div>
+              <div class="toggle-desc">Include paid / ad listings</div>
+            </div>
+            <div class="toggle on" id="toggle-sponsored" onclick="this.classList.toggle('on')"></div>
+          </div>
+          <div class="toggle-item">
+            <div class="toggle-info">
+              <div class="toggle-name">Smart Stop</div>
+              <div class="toggle-desc">Halt on thin or empty pages</div>
+            </div>
+            <div class="toggle on" id="toggle-smartstop" onclick="this.classList.toggle('on')"></div>
+          </div>
+          <div class="toggle-item" style="border-bottom:none">
+            <div class="toggle-info">
+              <div class="toggle-name">Metadata Only Mode</div>
+              <div class="toggle-desc">No product requests — instant results</div>
+            </div>
+            <div class="toggle" id="toggle-metaonly" onclick="this.classList.toggle('on');updateMetaOnlyHint()"></div>
+          </div>
+          <div id="meta-only-hint" style="display:none;margin-top:10px" class="hint-box">
+            ⚡ Extracts title, price, rating & thumbnail directly from search pages — no per-product requests needed.
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;margin-bottom:0">
+          <label>Marketplace</label>
           <select id="marketplace">
-            <option value="com">.com (US)</option>
-            <option value="co.uk">.co.uk (UK)</option>
-            <option value="de">.de (Germany)</option>
-            <option value="co.jp">.co.jp (Japan)</option>
-            <option value="ca">.ca (Canada)</option>
-            <option value="com.au">.com.au (Australia)</option>
+            <option value="com">🇺🇸 amazon.com (US)</option>
+            <option value="co.uk">🇬🇧 amazon.co.uk (UK)</option>
+            <option value="de">🇩🇪 amazon.de (Germany)</option>
+            <option value="co.jp">🇯🇵 amazon.co.jp (Japan)</option>
+            <option value="ca">🇨🇦 amazon.ca (Canada)</option>
+            <option value="com.au">🇦🇺 amazon.com.au (Australia)</option>
           </select>
         </div>
       </div>
     </div>
 
-    <div>
-      <div class="section-title">📦 Data Fields</div>
+    <!-- Data Fields -->
+    <div class="section">
+      <div class="section-label">📦 Data Fields</div>
       <div class="card">
         <div class="chip-group" id="field-chips">
-          <span class="chip selected" data-field="title">Title</span>
-          <span class="chip selected" data-field="price">Price</span>
-          <span class="chip selected" data-field="rating">Rating</span>
-          <span class="chip selected" data-field="reviews">Reviews</span>
+          <span class="chip on" data-field="title">Title</span>
+          <span class="chip on" data-field="price">Price</span>
+          <span class="chip on" data-field="rating">Rating</span>
+          <span class="chip on" data-field="reviews">Reviews</span>
           <span class="chip" data-field="images">Images</span>
           <span class="chip" data-field="description">Description</span>
           <span class="chip" data-field="features">Features</span>
           <span class="chip" data-field="seller">Seller</span>
           <span class="chip" data-field="sku">Variants</span>
           <span class="chip" data-field="bsr">BSR Rank</span>
-          <span class="chip" data-field="qa">Q&A</span>
+          <span class="chip" data-field="qa">Q&amp;A</span>
           <span class="chip" data-field="dimensions">Dimensions</span>
         </div>
       </div>
     </div>
 
-    <div>
-      <div class="section-title">⚡ Rate Limiting</div>
+    <!-- Rate Limiting -->
+    <div class="section">
+      <div class="section-label">⚡ Rate Limiting</div>
       <div class="card">
-        <div class="field-group">
-          <label>REQUESTS / MIN: <span id="rpm-val" style="color:var(--accent)">20</span></label>
+        <div class="field">
+          <div class="slider-row">
+            <span class="slider-label">Requests / Min</span>
+            <span class="slider-val" id="rpm-val">20</span>
+          </div>
           <input type="range" id="rpm-slider" min="5" max="60" value="20"
-            style="padding:5px 0;background:transparent;border:none;box-shadow:none;accent-color:var(--accent)"
             oninput="document.getElementById('rpm-val').textContent=this.value">
         </div>
-        <div class="field-group">
-          <label>JITTER MAX: <span id="jitter-val" style="color:var(--accent)">1.5s</span></label>
+        <div class="field" style="margin-bottom:0">
+          <div class="slider-row">
+            <span class="slider-label">Jitter Max</span>
+            <span class="slider-val" id="jitter-val">1.5s</span>
+          </div>
           <input type="range" id="jitter-slider" min="0" max="50" value="15"
-            style="padding:5px 0;background:transparent;border:none;box-shadow:none;accent-color:var(--accent)"
             oninput="document.getElementById('jitter-val').textContent=(this.value/10).toFixed(1)+'s'">
         </div>
-        <div class="field-group">
-          <label>RATE WINDOW (60s view)</label>
-          <div class="rate-viz" id="rate-viz"></div>
+        <div style="margin-top:16px">
+          <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Rate Window — last 60s</div>
+          <div class="rate-grid" id="rate-viz"></div>
         </div>
       </div>
     </div>
 
-    <div>
-      <div class="section-title">🌐 Proxies</div>
+    <!-- Proxies -->
+    <div class="section">
+      <div class="section-label">🌐 Proxy Config</div>
       <div class="card">
-        <div class="toggle-row">
-          <div><div class="toggle-label">Rotate Proxies</div><div class="toggle-sub">Round-robin</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">Rotate Proxies</div>
+            <div class="toggle-desc">Round-robin across all</div>
+          </div>
           <div class="toggle on" id="toggle-rotate" onclick="this.classList.toggle('on')"></div>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Sticky Sessions</div><div class="toggle-sub">Same proxy per ASIN</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">Sticky Sessions</div>
+            <div class="toggle-desc">Same proxy per ASIN</div>
+          </div>
           <div class="toggle" id="toggle-sticky" onclick="this.classList.toggle('on')"></div>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Auto-retire Failed</div><div class="toggle-sub">Remove dead proxies</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">Auto-retire Failed</div>
+            <div class="toggle-desc">Remove proxies after 3 failures</div>
+          </div>
           <div class="toggle on" id="toggle-retire" onclick="this.classList.toggle('on')"></div>
         </div>
-        <div style="margin-top:12px">
-          <div class="section-title" style="margin-bottom:8px">PROXY LIST</div>
-          <div class="proxy-list" id="proxy-list">
-            <div style="color:var(--muted);font-size:11px;font-family:'JetBrains Mono',monospace;padding:4px">No proxies added. Running direct.</div>
+        <div style="margin-top:16px">
+          <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Active Proxies</div>
+          <div id="proxy-list">
+            <div class="proxy-empty">No proxies — running direct</div>
           </div>
-          <div style="margin-top:8px;display:flex;gap:6px">
-            <input type="text" placeholder="host:port or user:pass@host:port" id="new-proxy" style="font-size:11px">
-            <button class="btn btn-secondary btn-sm" onclick="addProxy()">+</button>
+          <div class="proxy-add-row">
+            <input type="text" id="new-proxy" placeholder="host:port or user:pass@host:port">
+            <button class="btn btn-ghost btn-sm" onclick="addProxy()">+ Add</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div>
-      <div class="section-title">⚙ Options</div>
+    <!-- Options -->
+    <div class="section">
+      <div class="section-label">⚙ Options</div>
       <div class="card">
-        <div class="toggle-row">
-          <div><div class="toggle-label">Retry on Fail</div><div class="toggle-sub">Up to 3 attempts</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">Retry on Fail</div>
+            <div class="toggle-desc">Up to 3 attempts per ASIN</div>
+          </div>
           <div class="toggle on" onclick="this.classList.toggle('on')"></div>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Random User Agent</div><div class="toggle-sub">Rotate UA strings</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">Random User-Agent</div>
+            <div class="toggle-desc">Rotate browser UA strings</div>
+          </div>
           <div class="toggle on" id="toggle-ua" onclick="this.classList.toggle('on')"></div>
         </div>
-        <div class="toggle-row">
-          <div><div class="toggle-label">Captcha Detection</div><div class="toggle-sub">Pause on CAPTCHA</div></div>
+        <div class="toggle-item">
+          <div class="toggle-info">
+            <div class="toggle-name">CAPTCHA Detection</div>
+            <div class="toggle-desc">Pause and alert on detection</div>
+          </div>
           <div class="toggle on" onclick="this.classList.toggle('on')"></div>
         </div>
       </div>
     </div>
 
-    <button class="btn btn-primary" id="start-btn" onclick="startScrape()" style="font-size:14px;padding:14px;letter-spacing:1px">
-      ▶ START SCRAPING
+    <!-- Action buttons -->
+    <button class="btn btn-primary" id="start-btn" onclick="startScrape()">
+      ▶&nbsp;&nbsp;Start Scraping
     </button>
-    <button class="btn btn-secondary" id="stop-btn" onclick="stopScrape()" disabled>
-      ■ STOP
+    <button class="btn btn-danger" id="stop-btn" onclick="stopScrape()" disabled>
+      ■&nbsp;&nbsp;Stop
     </button>
 
-  </div>
+  </div><!-- /sidebar -->
 
-  <!-- MAIN PANEL -->
+  <!-- ════ MAIN ════ -->
   <div class="main">
-    <div class="tabs">
+
+    <!-- Tab bar -->
+    <div class="tabbar">
       <div class="tab active" onclick="switchTab('overview',this)">Overview</div>
-      <div class="tab" onclick="switchTab('results',this)">Results <span class="badge" id="results-badge">0</span></div>
+      <div class="tab" onclick="switchTab('results',this)">Results <span class="tab-badge" id="results-badge">0</span></div>
       <div class="tab" onclick="switchTab('logs',this)">Logs</div>
       <div class="tab" onclick="switchTab('export',this)">Export</div>
     </div>
 
+    <!-- ── Content ── -->
     <div class="content">
 
-      <!-- OVERVIEW -->
+      <!-- ▸ OVERVIEW TAB -->
       <div class="tab-pane active" id="tab-overview">
-        <div class="progress-section">
-          <div class="progress-header">
-            <div class="progress-title">Scraping Progress</div>
-            <div class="progress-status status-idle" id="status-badge">● IDLE</div>
+
+        <!-- Search discovery (search mode only) -->
+        <div id="search-discovery-panel" style="display:none">
+          <div class="discovery-card">
+            <div class="discovery-head">
+              <div class="discovery-title">🔍 Search Discovery</div>
+              <div class="status-badge status-running" id="search-status-badge">● Searching</div>
+            </div>
+            <div class="discovery-stats">
+              <div class="ds-box">
+                <div class="ds-label">Keywords</div>
+                <div class="ds-val orange" id="sd-keywords">0</div>
+              </div>
+              <div class="ds-box">
+                <div class="ds-label">Pages</div>
+                <div class="ds-val purple" id="sd-pages">0</div>
+              </div>
+              <div class="ds-box">
+                <div class="ds-label">ASINs Found</div>
+                <div class="ds-val green" id="sd-asins">0</div>
+              </div>
+            </div>
+            <div id="sd-keyword-rows"></div>
           </div>
-          <div class="progress-bar-wrap">
-            <div class="progress-bar" id="main-progress" style="width:0%"></div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-card">
+          <div class="progress-head">
+            <div class="progress-title">Scraping Progress</div>
+            <div class="status-badge status-idle" id="status-badge">● Idle</div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="main-progress" style="width:0%"></div>
           </div>
           <div class="progress-meta">
             <span id="progress-label">Ready to scrape</span>
@@ -354,103 +1061,148 @@
           </div>
         </div>
 
-        <div class="metrics-grid">
-          <div class="metric metric-scraped">
+        <!-- Metrics -->
+        <div class="metrics">
+          <div class="metric-card mc-orange">
             <div class="metric-label">Scraped</div>
-            <div class="metric-value" id="m-scraped">0</div>
+            <div class="metric-num" id="m-scraped">0</div>
             <div class="metric-sub">of <span id="m-total">0</span> targets</div>
           </div>
-          <div class="metric metric-success">
+          <div class="metric-card mc-green">
             <div class="metric-label">Success</div>
-            <div class="metric-value" id="m-success">0</div>
+            <div class="metric-num" id="m-success">0</div>
             <div class="metric-sub" id="m-success-pct">0% rate</div>
           </div>
-          <div class="metric metric-failed">
+          <div class="metric-card mc-red">
             <div class="metric-label">Failed</div>
-            <div class="metric-value" id="m-failed">0</div>
+            <div class="metric-num" id="m-failed">0</div>
             <div class="metric-sub" id="m-retry">0 retried</div>
           </div>
-          <div class="metric metric-rate">
+          <div class="metric-card mc-purple">
             <div class="metric-label">Avg Speed</div>
-            <div class="metric-value" id="m-speed">—</div>
-            <div class="metric-sub">req/min</div>
+            <div class="metric-num" id="m-speed">—</div>
+            <div class="metric-sub">req / min</div>
           </div>
         </div>
 
-        <div class="log-panel">
-          <div class="log-header">
-            <div class="log-title">📟 Activity Log</div>
-            <button class="btn btn-secondary btn-sm" onclick="clearLog('log-body')">Clear</button>
+        <!-- Activity log -->
+        <div class="log-card">
+          <div class="log-head">
+            <div class="log-head-title">📟 Activity Log</div>
+            <button class="btn btn-ghost btn-sm" onclick="clearLog('log-body')">Clear</button>
           </div>
           <div class="log-body" id="log-body"></div>
         </div>
-      </div>
 
-      <!-- RESULTS -->
+      </div><!-- /overview -->
+
+      <!-- ▸ RESULTS TAB -->
       <div class="tab-pane" id="tab-results">
-        <div class="table-wrap">
-          <div class="table-header">
-            <div class="table-header-left">📋 Scraped Products</div>
+        <div class="table-card">
+          <div class="table-head">
+            <div class="table-head-title">📋 Scraped Products</div>
             <div class="table-actions">
-              <input type="text" placeholder="Search..." style="width:160px;padding:5px 9px;font-size:11px" id="search-results" oninput="filterResults()">
+              <input class="table-search" type="text" id="search-results" placeholder="Search results…" oninput="filterResults()">
             </div>
           </div>
           <div id="results-table-wrap">
-            <div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">No results yet</div><div class="empty-sub">Start scraping to see product data here</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- LOGS -->
-      <div class="tab-pane" id="tab-logs">
-        <div class="log-panel" style="border-radius:14px">
-          <div class="log-header">
-            <div class="log-title">📟 Full Log</div>
-            <div style="display:flex;gap:8px">
-              <select style="padding:5px 8px;font-size:11px;width:auto" id="log-filter">
-                <option value="all">All</option><option value="ok">Success</option><option value="err">Errors</option><option value="warn">Warnings</option>
-              </select>
-              <button class="btn btn-secondary btn-sm" onclick="clearLog('full-log')">Clear</button>
+            <div class="empty">
+              <div class="empty-icon">📦</div>
+              <div class="empty-title">No results yet</div>
+              <div class="empty-desc">Start scraping to populate this table</div>
             </div>
           </div>
-          <div class="log-body" id="full-log" style="max-height:calc(100vh - 250px)"></div>
         </div>
       </div>
 
-      <!-- EXPORT -->
+      <!-- ▸ LOGS TAB -->
+      <div class="tab-pane" id="tab-logs">
+        <div class="log-card">
+          <div class="log-head">
+            <div class="log-head-title">📟 Full Log</div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <select id="log-filter" style="width:auto;padding:9px 14px;font-size:0.85rem">
+                <option value="all">All</option>
+                <option value="ok">Success</option>
+                <option value="err">Errors</option>
+                <option value="warn">Warnings</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" onclick="clearLog('full-log')">Clear</button>
+            </div>
+          </div>
+          <div class="log-body" id="full-log"></div>
+        </div>
+      </div>
+
+      <!-- ▸ EXPORT TAB -->
       <div class="tab-pane" id="tab-export">
         <div class="export-grid">
-          <div class="export-card" onclick="doExport('csv')"><div class="export-icon">📊</div><div class="export-name">CSV</div><div class="export-desc">Excel / Google Sheets compatible</div></div>
-          <div class="export-card" onclick="doExport('json')"><div class="export-icon">{ }</div><div class="export-name">JSON</div><div class="export-desc">Structured data for APIs</div></div>
-          <div class="export-card" onclick="doExport('xlsx')"><div class="export-icon">📗</div><div class="export-name">Excel</div><div class="export-desc">Formatted .xlsx with headers</div></div>
-          <div class="export-card" onclick="doExport('tsv')"><div class="export-icon">📑</div><div class="export-name">TSV</div><div class="export-desc">Tab-separated for databases</div></div>
-          <div class="export-card" onclick="doExport('ndjson')"><div class="export-icon">📄</div><div class="export-name">NDJSON</div><div class="export-desc">Stream-friendly newline-delimited</div></div>
-          <div class="export-card" onclick="doExport('xml')"><div class="export-icon">🏷</div><div class="export-name">XML</div><div class="export-desc">Structured markup format</div></div>
-        </div>
-        <div class="card">
-          <div class="section-title" style="margin-bottom:12px">EXPORT SETTINGS</div>
-          <div class="field-group">
-            <label>OUTPUT FILENAME</label>
-            <input type="text" value="amazon_products" id="export-filename">
+          <div class="export-tile" onclick="doExport('csv')">
+            <div class="export-icon">📊</div>
+            <div class="export-name">CSV</div>
+            <div class="export-desc">Comma-separated · works in Excel &amp; Sheets</div>
           </div>
-          <div class="toggle-row">
-            <div><div class="toggle-label">Flatten Nested Objects</div><div class="toggle-sub">Arrays become | separated values</div></div>
+          <div class="export-tile" onclick="doExport('json')">
+            <div class="export-icon">{ }</div>
+            <div class="export-name">JSON</div>
+            <div class="export-desc">Structured · perfect for APIs &amp; pipelines</div>
+          </div>
+          <div class="export-tile" onclick="doExport('xlsx')">
+            <div class="export-icon">📗</div>
+            <div class="export-name">Excel</div>
+            <div class="export-desc">Formatted .xlsx with auto column widths</div>
+          </div>
+          <div class="export-tile" onclick="doExport('tsv')">
+            <div class="export-icon">📑</div>
+            <div class="export-name">TSV</div>
+            <div class="export-desc">Tab-separated · great for databases</div>
+          </div>
+          <div class="export-tile" onclick="doExport('ndjson')">
+            <div class="export-icon">📄</div>
+            <div class="export-name">NDJSON</div>
+            <div class="export-desc">Newline-delimited · stream-friendly</div>
+          </div>
+          <div class="export-tile" onclick="doExport('xml')">
+            <div class="export-icon">🏷</div>
+            <div class="export-name">XML</div>
+            <div class="export-desc">Structured markup · legacy systems</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-size:0.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:18px">Export Settings</div>
+          <div class="field">
+            <label>Output Filename</label>
+            <input type="text" id="export-filename" value="amazon_products">
+          </div>
+          <div class="toggle-item">
+            <div class="toggle-info">
+              <div class="toggle-name">Flatten Nested Objects</div>
+              <div class="toggle-desc">Arrays become pipe-separated values</div>
+            </div>
             <div class="toggle on" id="toggle-flatten" onclick="this.classList.toggle('on')"></div>
           </div>
         </div>
       </div>
 
-    </div>
-  </div>
-</div>
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
 
 <script>
-// ── Socket.io ─────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
 const socket = io();
 let elapsed = 0, timerInterval = null;
 let resultCount = 0;
 const proxyList = [];
+const sdState = { keywords: 0, pages: 0, asins: 0, rows: {} };
+let activeFields = [];
 
+// ══════════════════════════════════════════════════
+//  SOCKET
+// ══════════════════════════════════════════════════
 socket.on('connect', () => {
   document.getElementById('hdr-conn').textContent = 'Server Online';
   addLog('info', 'Connected to ASIN Harvester server.', 'log-body');
@@ -466,15 +1218,14 @@ socket.on('log', ({ type, msg }) => {
 socket.on('scrape:start', ({ total }) => {
   document.getElementById('m-total').textContent = total;
   setStatus('running');
+  document.getElementById('main-progress').classList.add('running');
   elapsed = 0;
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     elapsed++;
     document.getElementById('hdr-timer').textContent = formatTime(elapsed);
     const slot = elapsed % 60;
-    document.querySelectorAll('.rate-block').forEach((b, i) => {
-      b.classList.toggle('used', i < slot);
-    });
+    document.querySelectorAll('.rate-block').forEach((b, i) => b.classList.toggle('lit', i < slot));
   }, 1000);
 });
 socket.on('scrape:progress', ({ current, total, pct, result, stats }) => {
@@ -489,7 +1240,6 @@ socket.on('scrape:progress', ({ current, total, pct, result, stats }) => {
   document.getElementById('m-speed').textContent = rate;
   const sp = (stats.success + stats.failed) > 0 ? Math.round(stats.success / (stats.success + stats.failed) * 100) : 0;
   document.getElementById('m-success-pct').textContent = sp + '% rate';
-
   if (result.ok) {
     resultCount++;
     document.getElementById('results-badge').textContent = resultCount;
@@ -499,34 +1249,71 @@ socket.on('scrape:progress', ({ current, total, pct, result, stats }) => {
 socket.on('scrape:complete', ({ stats, total }) => {
   clearInterval(timerInterval);
   setStatus('done');
+  document.getElementById('main-progress').classList.remove('running');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled = true;
   showToast(`✓ Done! ${total} products scraped`, 'ok');
+  const ssBadge = document.getElementById('search-status-badge');
+  if (ssBadge) { ssBadge.className = 'status-badge status-done'; ssBadge.textContent = '✓ Done'; }
 });
 socket.on('scrape:error', ({ error }) => {
   clearInterval(timerInterval);
   setStatus('error');
+  document.getElementById('main-progress').classList.remove('running');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled = true;
   showToast('Error: ' + error, 'err');
 });
+socket.on('search:page', ({ keyword, page, maxPages, newASINs, totalCollected, detectedTotal }) => {
+  document.getElementById('search-discovery-panel').style.display = 'block';
+  sdState.pages++;
+  sdState.asins = totalCollected;
+  document.getElementById('sd-pages').textContent = sdState.pages;
+  document.getElementById('sd-asins').textContent = totalCollected;
+  const key = btoa(unescape(encodeURIComponent(keyword))).replace(/[=+/]/g, '_');
+  if (!sdState.rows[keyword]) {
+    sdState.rows[keyword] = true;
+    sdState.keywords++;
+    document.getElementById('sd-keywords').textContent = sdState.keywords;
+    const row = document.createElement('div');
+    row.className = 'kw-row';
+    row.id = 'kw-' + key;
+    row.innerHTML = `
+      <span class="kw-name" title="${esc(keyword)}">${esc(keyword)}</span>
+      <span class="kw-page" id="kwp-${key}">p${page}/${maxPages}</span>
+      <span class="kw-asins" id="kwa-${key}">+${newASINs}</span>
+      ${detectedTotal ? `<span class="kw-total">~${detectedTotal.toLocaleString()} on Amazon</span>` : ''}`;
+    document.getElementById('sd-keyword-rows').appendChild(row);
+  } else {
+    const pEl = document.getElementById('kwp-' + key);
+    const aEl = document.getElementById('kwa-' + key);
+    if (pEl) pEl.textContent = `p${page}/${maxPages}`;
+    if (aEl) aEl.textContent = `+${totalCollected}`;
+  }
+});
 
-// ── UI Helpers ────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════
 function formatTime(s) {
   return [Math.floor(s/3600), Math.floor((s%3600)/60), s%60].map(n => String(n).padStart(2,'0')).join(':');
 }
 function setStatus(s) {
   const el = document.getElementById('status-badge');
-  el.className = 'progress-status';
-  const map = { running:['status-running','● RUNNING'], done:['status-done','✓ COMPLETE'], error:['status-error','✗ ERROR'], idle:['status-idle','● IDLE'] };
-  el.classList.add(map[s][0]); el.textContent = map[s][1];
+  const map = {
+    running: ['status-running', '● Running'],
+    done:    ['status-done',    '✓ Complete'],
+    error:   ['status-error',   '✗ Error'],
+    idle:    ['status-idle',    '● Idle'],
+  };
+  el.className = 'status-badge ' + map[s][0];
+  el.textContent = map[s][1];
 }
 function addLog(type, msg, target) {
-  const time = formatTime(elapsed);
-  const cls = {ok:'log-ok',err:'log-err',warn:'log-warn',info:'log-info'}[type] || 'log-info';
   const el = document.getElementById(target);
   if (!el) return;
-  el.innerHTML += `<div class="log-line"><span class="log-time">${time}</span><span class="${cls}">${msg}</span></div>`;
+  const cls = { ok:'log-ok', err:'log-err', warn:'log-warn', info:'log-info' }[type] || 'log-info';
+  el.innerHTML += `<div class="log-line"><span class="log-t">${formatTime(elapsed)}</span><span class="${cls}">${msg}</span></div>`;
   el.scrollTop = el.scrollHeight;
 }
 function clearLog(id) { document.getElementById(id).innerHTML = ''; }
@@ -535,119 +1322,246 @@ function showToast(msg, type = 'ok') {
   t.className = `toast toast-${type}`;
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
+  setTimeout(() => t.remove(), 4000);
 }
-
-// ── Tabs ─────────────────────────────────────────────────────────────────────
 function switchTab(id, el) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + id).classList.add('active');
   el.classList.add('active');
 }
+
+// ══════════════════════════════════════════════════
+//  SIDEBAR CONTROLS
+// ══════════════════════════════════════════════════
 function updateTargetMode() {
   const m = document.getElementById('target-mode').value;
-  document.getElementById('asin-field').style.display = m === 'asin' ? 'block' : 'none';
-  document.getElementById('search-field').style.display = m === 'search' ? 'block' : 'none';
+  document.getElementById('asin-field').style.display    = m === 'asin'   ? 'block' : 'none';
+  document.getElementById('search-field').style.display  = m === 'search' ? 'block' : 'none';
+  document.getElementById('search-options').style.display = m === 'search' ? 'block' : 'none';
+}
+function updatePagesLabel(val) {
+  const n = parseInt(val);
+  const isAll = n >= 50;
+  document.getElementById('pages-val').textContent = isAll ? 'ALL' : n;
+  document.getElementById('pages-est').textContent = isAll ? '∞' : (n * 48).toLocaleString();
+  const allLabel = document.getElementById('pages-all-label');
+  if (allLabel) allLabel.style.display = isAll ? 'inline' : 'none';
+  // Highlight matching preset button
+  document.querySelectorAll('.page-preset').forEach(btn => {
+    const bv = btn.textContent.trim() === 'ALL' ? 50 : parseInt(btn.textContent);
+    btn.classList.toggle('active', bv === n);
+  });
 }
 
-// ── Rate viz ──────────────────────────────────────────────────────────────────
+// Slider moved → sync number input + label
+function syncPagesInput(val) {
+  const n = parseInt(val);
+  document.getElementById('pages-input').value = n;
+  updatePagesLabel(n);
+}
+
+// Number input typed → clamp to 1–50, sync slider + label
+function syncPagesSlider(val) {
+  let n = parseInt(val);
+  if (isNaN(n) || n < 1) n = 1;
+  if (n > 50) n = 50;
+  document.getElementById('pages-slider').value = n;
+  document.getElementById('pages-input').value = n;
+  updatePagesLabel(n);
+}
+
+// Preset button clicked
+function setPages(n) {
+  document.getElementById('pages-slider').value = n;
+  document.getElementById('pages-input').value = n;
+  updatePagesLabel(n);
+}
+function updateMetaOnlyHint() {
+  const on = document.getElementById('toggle-metaonly').classList.contains('on');
+  document.getElementById('meta-only-hint').style.display = on ? 'block' : 'none';
+}
+
+// Rate viz
 const rateViz = document.getElementById('rate-viz');
 for (let i = 0; i < 60; i++) {
-  const b = document.createElement('div');
-  b.className = 'rate-block';
-  rateViz.appendChild(b);
+  const b = document.createElement('div'); b.className = 'rate-block'; rateViz.appendChild(b);
 }
 
-// ── Chips ─────────────────────────────────────────────────────────────────────
-document.querySelectorAll('#field-chips .chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('selected')));
+// Chips  (use class "on" not "selected" to match new CSS)
+document.querySelectorAll('#field-chips .chip').forEach(c =>
+  c.addEventListener('click', () => c.classList.toggle('on'))
+);
 
-// ── Proxies ───────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  PROXIES
+// ══════════════════════════════════════════════════
 function addProxy() {
   const val = document.getElementById('new-proxy').value.trim();
   if (!val) return;
   proxyList.push(val);
-  renderProxies();
   document.getElementById('new-proxy').value = '';
-  document.getElementById('hdr-proxies').textContent = proxyList.length + ' Proxies';
+  document.getElementById('hdr-proxies').textContent = proxyList.length;
+  renderProxies();
   addLog('info', `Proxy added: ${val}`, 'log-body');
 }
 function removeProxy(i) {
   proxyList.splice(i, 1);
+  document.getElementById('hdr-proxies').textContent = proxyList.length;
   renderProxies();
-  document.getElementById('hdr-proxies').textContent = proxyList.length + ' Proxies';
 }
 function renderProxies() {
   const el = document.getElementById('proxy-list');
   if (!proxyList.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:11px;font-family:\'JetBrains Mono\',monospace;padding:4px">No proxies added. Running direct.</div>';
+    el.innerHTML = '<div class="proxy-empty">No proxies — running direct</div>';
     return;
   }
   el.innerHTML = proxyList.map((p, i) => `
     <div class="proxy-item">
-      <div class="proxy-status" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>
-      <div class="proxy-addr">${p}</div>
-      <div class="proxy-remove" onclick="removeProxy(${i})">✕</div>
+      <div class="proxy-dot" style="background:var(--green);box-shadow:0 0 7px var(--green)"></div>
+      <div class="proxy-addr">${esc(p)}</div>
+      <div class="proxy-rm" onclick="removeProxy(${i})" title="Remove">✕</div>
     </div>`).join('');
 }
 
-// ── Start/Stop ────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  START / STOP
+// ══════════════════════════════════════════════════
 async function startScrape() {
   const mode = document.getElementById('target-mode').value;
   const asins = document.getElementById('asin-input').value.trim().split('\n').map(s => s.trim()).filter(Boolean);
   const keywords = document.getElementById('keyword-input').value.trim().split('\n').map(s => s.trim()).filter(Boolean);
-
   if (mode === 'asin' && !asins.length) { showToast('No ASINs provided!', 'warn'); return; }
   if (mode === 'search' && !keywords.length) { showToast('No keywords provided!', 'warn'); return; }
 
-  const fields = [...document.querySelectorAll('#field-chips .chip.selected')].map(c => c.dataset.field);
+  const fields = [...document.querySelectorAll('#field-chips .chip.on')].map(c => c.dataset.field);
   const rpm = parseInt(document.getElementById('rpm-slider').value);
   const jitterMs = parseInt(document.getElementById('jitter-slider').value) * 100;
   const marketplace = document.getElementById('marketplace').value;
+  const pagesRaw = parseInt(document.getElementById('pages-input')?.value || document.getElementById('pages-slider')?.value || 5);
+  const maxPages = pagesRaw >= 50 ? 999 : pagesRaw;  // 50 on slider = "ALL" = no cap
+  const includeSponsored = document.getElementById('toggle-sponsored')?.classList.contains('on') ?? true;
+  const stopOnEmpty = document.getElementById('toggle-smartstop')?.classList.contains('on') ?? true;
+  const scrapeSearchMetadataOnly = document.getElementById('toggle-metaonly')?.classList.contains('on') ?? false;
 
-  resultCount = 0;
+  // Reset UI
+  resultCount = 0; activeFields = [];
+  Object.assign(sdState, { keywords: 0, pages: 0, asins: 0, rows: {} });
+  document.getElementById('sd-keyword-rows').innerHTML = '';
+  document.getElementById('sd-keywords').textContent = '0';
+  document.getElementById('sd-pages').textContent = '0';
+  document.getElementById('sd-asins').textContent = '0';
+  document.getElementById('search-discovery-panel').style.display = mode === 'search' ? 'block' : 'none';
+  const ssBadge = document.getElementById('search-status-badge');
+  if (ssBadge) { ssBadge.className = 'status-badge status-running'; ssBadge.textContent = '● Searching'; }
   document.getElementById('results-badge').textContent = '0';
-  document.getElementById('results-table-wrap').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Scraping in progress...</div></div>';
+  document.getElementById('results-table-wrap').innerHTML = '<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">Scraping in progress…</div></div>';
   document.getElementById('start-btn').disabled = true;
   document.getElementById('stop-btn').disabled = false;
 
-  const body = { mode, asins, keywords, marketplace, rpm, jitterMs, maxRetries: 3, proxies: proxyList, fields, stickyProxies: document.getElementById('toggle-sticky').classList.contains('on') };
-
+  const body = {
+    mode, asins, keywords, marketplace, rpm, jitterMs, maxRetries: 3,
+    proxies: proxyList, fields,
+    stickyProxies: document.getElementById('toggle-sticky').classList.contains('on'),
+    maxPages, includeSponsored, stopOnEmpty, thinPageThreshold: 5, scrapeSearchMetadataOnly,
+  };
   try {
     const r = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) { const e = await r.json(); showToast(e.error, 'err'); document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true; }
-  } catch (e) { showToast('Server error: ' + e.message, 'err'); document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true; }
+    if (!r.ok) {
+      const e = await r.json(); showToast(e.error, 'err');
+      document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true;
+    }
+  } catch (e) {
+    showToast('Server error: ' + e.message, 'err');
+    document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true;
+  }
 }
 async function stopScrape() {
   await fetch('/api/stop', { method: 'POST' });
   clearInterval(timerInterval);
   setStatus('idle');
+  document.getElementById('main-progress').classList.remove('running');
   document.getElementById('start-btn').disabled = false;
   document.getElementById('stop-btn').disabled = true;
+  const ssBadge = document.getElementById('search-status-badge');
+  if (ssBadge) { ssBadge.className = 'status-badge status-idle'; ssBadge.textContent = '● Stopped'; }
 }
 
-// ── Results Table ─────────────────────────────────────────────────────────────
-function appendResultRow(p) {
-  let tbody = document.querySelector('#results-table-wrap tbody');
-  if (!tbody) {
-    document.getElementById('results-table-wrap').innerHTML = `
+// ══════════════════════════════════════════════════
+//  RESULTS TABLE — dynamic columns
+// ══════════════════════════════════════════════════
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+const FIELD_RENDERERS = {
+  title:       { label: 'Product Title',
+    render: p => `<div style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600" title="${esc(p.title)}">${esc(p.title)||'—'}</div>` },
+  price:       { label: 'Price',
+    render: p => `<span class="price-val">${esc(p.price)||'—'}</span>` },
+  rating:      { label: 'Rating',
+    render: p => p.rating ? `<span class="stars">${'★'.repeat(Math.round(p.rating))}</span>&nbsp;<span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">${p.rating}</span>` : '—' },
+  reviews:     { label: 'Reviews',
+    render: p => `<span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem">${p.review_count!=null?Number(p.review_count).toLocaleString():'—'}</span>` },
+  images:      { label: 'Images',
+    render: p => {
+      const imgs = Array.isArray(p.images) ? p.images : [];
+      if (!imgs.length) return '<span style="color:var(--text3)">—</span>';
+      return `<div style="display:flex;gap:5px;align-items:center">${imgs.slice(0,3).map(u=>`<img src="${esc(u)}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" onerror="this.style.display='none'">`).join('')}${imgs.length>3?`<span style="font-size:0.75rem;color:var(--text3)">+${imgs.length-3}</span>`:''}</div>`;
+    }},
+  description: { label: 'Description',
+    render: p => p.description ? `<div style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.85rem;color:var(--text2)" title="${esc(p.description)}">${esc(p.description)}</div>` : '<span style="color:var(--text3)">—</span>' },
+  features:    { label: 'Features',
+    render: p => {
+      const f = Array.isArray(p.features) ? p.features : [];
+      if (!f.length) return '<span style="color:var(--text3)">—</span>';
+      return `<div style="font-size:0.8rem;max-width:220px">${f.slice(0,2).map(x=>`<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);margin-bottom:2px" title="${esc(x)}">• ${esc(x)}</div>`).join('')}${f.length>2?`<div style="color:var(--accent);font-size:0.75rem">+${f.length-2} more</div>`:''}</div>`;
+    }},
+  seller:      { label: 'Seller',
+    render: p => {
+      const s = p.seller || '—';
+      const fba = p.fulfilled_by === 'Amazon';
+      return `<div style="font-size:0.85rem"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px" title="${esc(s)}">${esc(s)}</div>${fba?'<span style="font-size:0.72rem;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-border);padding:1px 8px;border-radius:4px;font-weight:700;margin-top:2px;display:inline-block">FBA</span>':''}</div>`;
+    }},
+  sku:         { label: 'Variants',
+    render: p => { const v = Array.isArray(p.variants)?p.variants:[]; return v.length?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--accent)">${v.length} variant${v.length>1?'s':''}</span>`:'<span style="color:var(--text3)">—</span>'; }},
+  bsr:         { label: 'BSR Rank',
+    render: p => p.bsr_rank?`<div><div style="font-family:'JetBrains Mono',monospace;color:var(--accent);font-weight:700">#${Number(p.bsr_rank).toLocaleString()}</div><div style="font-size:0.75rem;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${esc(p.bsr_category)||''}</div></div>`:'<span style="color:var(--text3)">—</span>' },
+  qa:          { label: 'Q&A',
+    render: p => { const qa=Array.isArray(p.qa)?p.qa:[]; if(!qa.length) return '<span style="color:var(--text3)">—</span>'; return `<div style="font-size:0.8rem">${qa.slice(0,1).map(q=>`<div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px" title="${esc(q.q)}">Q: ${esc(q.q)}</div>`).join('')}<span style="color:var(--accent);font-size:0.75rem">${qa.length} Q&A</span></div>`; }},
+  dimensions:  { label: 'Dimensions',
+    render: p => { const d=p.dimensions; if(!d||!Object.keys(d).length) return '<span style="color:var(--text3)">—</span>'; return `<div style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">${Object.entries(d).slice(0,2).map(([k,v])=>`<div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">${esc(k)}: ${esc(v)}</div>`).join('')}</div>`; }},
+};
+
+function initResultsTable() {
+  activeFields = ['asin',
+    ...[...document.querySelectorAll('#field-chips .chip.on')].map(c => c.dataset.field),
+    'status'
+  ];
+  const headers = activeFields.map(f => {
+    if (f === 'asin')   return '<th>ASIN</th>';
+    if (f === 'status') return '<th>Status</th>';
+    return `<th>${FIELD_RENDERERS[f]?.label || f.toUpperCase()}</th>`;
+  }).join('');
+  document.getElementById('results-table-wrap').innerHTML = `
+    <div class="table-wrap">
       <table>
-        <thead><tr>
-          <th>ASIN</th><th>Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Status</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>`;
-    tbody = document.querySelector('#results-table-wrap tbody');
-  }
+        <thead><tr>${headers}</tr></thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+    </div>`;
+}
+function appendResultRow(p) {
+  if (!document.getElementById('results-tbody')) initResultsTable();
+  const tbody = document.getElementById('results-tbody');
   const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><span class="asin-code">${p.asin || '—'}</span></td>
-    <td><div class="product-title" title="${p.title || ''}">${p.title || '—'}</div></td>
-    <td class="price">${p.price || '—'}</td>
-    <td><span class="rating-stars">${'★'.repeat(Math.round(p.rating || 0))}</span> ${p.rating || '—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${(p.review_count || 0).toLocaleString()}</td>
-    <td style="font-size:11px;color:var(--muted)">${p.bsr_rank ? '#' + p.bsr_rank.toLocaleString() : '—'}</td>
-    <td><span class="status-badge badge-ok">✓ OK</span></td>`;
+  tr.innerHTML = activeFields.map(f => {
+    if (f === 'asin')   return `<td><span class="asin-pill">${esc(p.asin)}</span></td>`;
+    if (f === 'status') return `<td><span class="ok-badge">✓ OK</span></td>`;
+    const r = FIELD_RENDERERS[f];
+    return `<td>${r ? r.render(p) : '—'}</td>`;
+  }).join('');
   tbody.appendChild(tr);
 }
 function filterResults() {
@@ -657,7 +1571,9 @@ function filterResults() {
   });
 }
 
-// ── Export ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════
+//  EXPORT
+// ══════════════════════════════════════════════════
 async function doExport(format) {
   const filename = document.getElementById('export-filename').value || 'amazon_products';
   const flattenNested = document.getElementById('toggle-flatten').classList.contains('on');
@@ -667,10 +1583,9 @@ async function doExport(format) {
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const fname = `${filename}.${format}`;
-    a.href = url; a.download = fname; a.click();
+    a.href = url; a.download = `${filename}.${format}`; a.click();
     URL.revokeObjectURL(url);
-    showToast(`✓ Exported as ${fname}`, 'ok');
+    showToast(`✓ Exported as ${filename}.${format}`, 'ok');
   } catch (e) { showToast('Export failed: ' + e.message, 'err'); }
 }
 </script>

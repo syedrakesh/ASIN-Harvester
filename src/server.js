@@ -39,6 +39,12 @@ app.post('/api/scrape', async (req, res) => {
     rpm = 20, jitterMs = 1500, maxRetries = 3, timeoutMs = 15000,
     proxies = [], stickyProxies = false,
     fields = null,
+    // Search options
+    maxPages = 5,
+    includeSponsored = true,
+    stopOnEmpty = true,
+    thinPageThreshold = 5,
+    scrapeSearchMetadataOnly = false,
   } = req.body;
 
   scraper = new AmazonScraper({ marketplace, rpm, jitterMs, maxRetries, timeoutMs, proxies, stickyProxies });
@@ -50,16 +56,57 @@ app.post('/api/scrape', async (req, res) => {
   // Run async
   (async () => {
     try {
-      let targets = asins;
+      let targets = [...asins];
+      // Shared seen-ASIN set so keywords don't duplicate each other
+      const globalSeen = new Set(asins);
+      // Collect search-page metadata (available without a product request)
+      const searchMetadata = [];
 
       if (mode === 'search' && keywords.length) {
-        io.emit('log', { type: 'info', msg: `Searching for ${keywords.length} keyword(s)...` });
+        io.emit('log', { type: 'info', msg: `Searching ${keywords.length} keyword(s) — up to ${maxPages} page(s) each${includeSponsored ? '' : ', skipping sponsored'}...` });
+
         for (const kw of keywords) {
-          const found = await scraper.scrapeSearch(kw);
-          targets.push(...found);
-          io.emit('log', { type: 'ok', msg: `Keyword "${kw}": found ${found.length} ASINs` });
+          if (scraper.aborted) break;
+
+          io.emit('log', { type: 'info', msg: `🔍 Searching: "${kw}"` });
+
+          const result = await scraper.scrapeSearch(kw, {
+            maxPages,
+            includeSponsored,
+            stopOnEmpty,
+            thinPageThreshold,
+            globalSeenASINs: globalSeen,
+            onPageDone: ({ page, maxPages, newASINs, totalCollected, detectedTotal, thin, noResults }) => {
+              const total = detectedTotal ? `~${detectedTotal.toLocaleString()} total on Amazon` : '';
+              const flags = [thin ? '⚠ thin' : '', noResults ? '✗ no results' : ''].filter(Boolean).join(' ');
+              io.emit('log', {
+                type: noResults ? 'warn' : (thin ? 'warn' : 'ok'),
+                msg: `  Page ${page}/${maxPages}: +${newASINs} ASINs (${totalCollected} so far)${total ? ' · ' + total : ''}${flags ? ' · ' + flags : ''}`,
+              });
+              io.emit('search:page', { keyword: kw, page, maxPages, newASINs, totalCollected, detectedTotal });
+            },
+          });
+
+          targets.push(...result.asins);
+          searchMetadata.push(...result.metadata);
+
+          const sponsoredCount = result.metadata.filter(m => m.is_sponsored).length;
+          io.emit('log', {
+            type: 'ok',
+            msg: `✓ "${kw}" → ${result.asins.length} unique ASINs` +
+              (result.detectedTotal ? ` (Amazon: ~${result.detectedTotal.toLocaleString()})` : '') +
+              (sponsoredCount ? ` · ${sponsoredCount} sponsored skipped or included` : ''),
+          });
         }
-        targets = [...new Set(targets)];
+
+        // If metadata-only mode, push metadata directly as results and skip product scraping
+        if (scrapeSearchMetadataOnly) {
+          scrapedResults = searchMetadata;
+          io.emit('scrape:start', { total: 0 });
+          io.emit('scrape:complete', { stats: scraper.getStats(), total: scrapedResults.length });
+          io.emit('log', { type: 'ok', msg: `Search metadata mode: ${scrapedResults.length} products collected from search pages (no product requests made).` });
+          return;
+        }
       }
 
       io.emit('scrape:start', { total: targets.length });

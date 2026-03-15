@@ -357,11 +357,127 @@ class AmazonScraper {
     return results;
   }
 
-  // ── Search scraping ──────────────────────────────────────────────────────
-  async scrapeSearch(keyword, pages = 1) {
-    const asins = [];
-    for (let page = 1; page <= pages; page++) {
+  // ── Parse a search results page ──────────────────────────────────────────
+  _parseSearchPage($, keyword, page, seenASINs, options = {}) {
+    const {
+      includeSponsored = true,
+      thinPageThreshold = 5,
+    } = options;
+
+    // ── Total result count (e.g. "1-48 of over 2,000 results") ──
+    let totalResults = null;
+    const totalText = $('[data-component-type="s-result-info-bar"] .s-desktop-toolbar span, .s-desktop-content .a-section span')
+      .filter((_, el) => /results/i.test($(el).text()))
+      .first().text().trim();
+    if (totalText) {
+      const m = totalText.match(/of\s+(?:over\s+)?([\d,]+)/i);
+      if (m) totalResults = parseInt(m[1].replace(/,/g, ''));
+    }
+
+    // ── No results page detection ──
+    const noResults = $('[data-component-type="s-no-results-message"]').length > 0 ||
+      $('body').text().includes('No results for') ||
+      $('body').text().includes('did not match any products');
+
+    if (noResults) {
+      logger.warn(`No results on page ${page} for "${keyword}" — stopping`);
+      return { asins: [], metadata: [], totalResults, noResults: true };
+    }
+
+    const newASINs = [];
+    const metadata = [];
+
+    // ── Walk every result item ──
+    $('[data-component-type="s-search-result"]').each((position, el) => {
+      const $el = $(el);
+      const asin = $el.attr('data-asin');
+
+      // Filter: must be valid 10-char ASIN
+      if (!asin || asin.length !== 10) return;
+
+      // Filter: sponsored
+      const isSponsored = $el.find('.s-sponsored-label-info-icon, [aria-label="Sponsored"]').length > 0 ||
+        $el.find('.puis-sponsored-label-text').length > 0;
+      if (!includeSponsored && isSponsored) return;
+
+      // Filter: already seen globally (cross-keyword dedup)
+      if (seenASINs.has(asin)) return;
+      seenASINs.add(asin);
+      newASINs.push(asin);
+
+      // ── Extract search-page metadata (free — no extra request needed) ──
+      const title = $el.find('h2 a span, h2 span.a-size-base-plus').first().text().trim() || null;
+
+      const priceWhole = $el.find('.a-price-whole').first().text().replace(/[^0-9]/g, '');
+      const priceFraction = $el.find('.a-price-fraction').first().text().replace(/[^0-9]/g, '');
+      const priceSymbol = $el.find('.a-price-symbol').first().text().trim();
+      const price = priceWhole
+        ? `${priceSymbol}${priceWhole}${priceFraction ? '.' + priceFraction : '.00'}`
+        : null;
+
+      const ratingText = $el.find('.a-icon-alt').first().text().trim();
+      const rating = ratingText ? parseFloat(ratingText.split(' ')[0]) || null : null;
+
+      const reviewText = $el.find('[aria-label$="stars"] + span, .a-size-base.s-underline-text').first().text().trim();
+      const reviewCount = reviewText ? parseInt(reviewText.replace(/[^0-9]/g, '')) || null : null;
+
+      const thumbnail = $el.find('img.s-image').first().attr('src') || null;
+
+      const productUrl = $el.find('h2 a').first().attr('href');
+      const url = productUrl ? `https://www.amazon.${this.options.marketplace}${productUrl.split('?')[0]}` : null;
+
+      const badge = $el.find('.s-label-popover-default .a-badge-text, .a-badge-text').first().text().trim() || null;
+
+      metadata.push({
+        asin,
+        search_keyword: keyword,
+        search_page: page,
+        search_position: position + 1,
+        is_sponsored: isSponsored,
+        title,
+        price,
+        rating,
+        review_count: reviewCount,
+        thumbnail,
+        url,
+        badge,
+        scraped_at: new Date().toISOString(),
+      });
+    });
+
+    logger.info(`Search "${keyword}" page ${page}: ${newASINs.length} new ASINs (${metadata.filter(m => m.is_sponsored).length} sponsored) — thin=${newASINs.length < thinPageThreshold}`);
+
+    return {
+      asins: newASINs,
+      metadata,
+      totalResults,
+      noResults: false,
+      thin: newASINs.length < thinPageThreshold,
+    };
+  }
+
+  // ── Multi-page search scraping ────────────────────────────────────────────
+  async scrapeSearch(keyword, options = {}) {
+    const {
+      maxPages = 5,          // pass 999 to mean 'no cap — stop only on smart-stop conditions'
+      includeSponsored = true,
+      thinPageThreshold = 5,
+      stopOnEmpty = true,
+      globalSeenASINs = null,    // pass a shared Set for cross-keyword dedup
+      onPageDone = null,         // callback(pageResult, pageNum, totalPages)
+    } = options;
+
+    // Use shared seen set if provided, else keyword-local
+    const seenASINs = globalSeenASINs instanceof Set ? globalSeenASINs : new Set();
+
+    const allASINs = [];
+    const allMetadata = [];
+    let detectedTotal = null;
+    let consecutiveThin = 0;
+
+    for (let page = 1; page <= maxPages; page++) {  // maxPages=999 → effectively unlimited; smart-stop will break early
       if (this.aborted) break;
+
       await this.rateLimiter.throttle();
       await this._jitter();
 
@@ -372,16 +488,72 @@ class AmazonScraper {
       try {
         const res = await client.get(url);
         const $ = cheerio.load(res.data);
-        $('[data-asin]').each((_, el) => {
-          const a = $(el).attr('data-asin');
-          if (a && a.length === 10) asins.push(a);
+
+        if (this._isCaptcha($)) {
+          this.stats.captchas++;
+          this.proxyManager.markFailure(proxy);
+          logger.warn(`CAPTCHA on search page ${page} for "${keyword}" — stopping pagination`);
+          break;
+        }
+
+        this.proxyManager.markSuccess(proxy, 0);
+
+        const pageResult = this._parseSearchPage($, keyword, page, seenASINs, {
+          includeSponsored,
+          thinPageThreshold,
         });
-        logger.info(`Search page ${page}/${pages} for "${keyword}": found ${asins.length} ASINs`);
+
+        if (pageResult.totalResults && !detectedTotal) {
+          detectedTotal = pageResult.totalResults;
+          logger.info(`"${keyword}" — Amazon reports ~${detectedTotal.toLocaleString()} total results`);
+        }
+
+        allASINs.push(...pageResult.asins);
+        allMetadata.push(...pageResult.metadata);
+
+        if (onPageDone) {
+          onPageDone({
+            keyword,
+            page,
+            maxPages,
+            newASINs: pageResult.asins.length,
+            totalCollected: allASINs.length,
+            detectedTotal,
+            thin: pageResult.thin,
+            noResults: pageResult.noResults,
+          });
+        }
+
+        // ── Smart stop conditions ──
+        if (stopOnEmpty && pageResult.noResults) {
+          logger.info(`"${keyword}" — no results on page ${page}, stopping`);
+          break;
+        }
+
+        if (stopOnEmpty && pageResult.thin) {
+          consecutiveThin++;
+          if (consecutiveThin >= 2) {
+            logger.info(`"${keyword}" — 2 consecutive thin pages, stopping at page ${page}`);
+            break;
+          }
+        } else {
+          consecutiveThin = 0;
+        }
+
+        // If we've already collected more than the detected total, stop
+        if (detectedTotal && allASINs.length >= detectedTotal) {
+          logger.info(`"${keyword}" — collected ${allASINs.length} >= detected total ${detectedTotal}, stopping`);
+          break;
+        }
+
       } catch (err) {
-        logger.error(`Search error page ${page}: ${err.message}`);
+        logger.error(`Search error page ${page} for "${keyword}": ${err.message}`);
+        // Don't break on single page error — try next page
       }
     }
-    return [...new Set(asins)];
+
+    logger.info(`"${keyword}" search complete: ${allASINs.length} unique ASINs across up to ${maxPages} pages`);
+    return { asins: allASINs, metadata: allMetadata, detectedTotal };
   }
 
   getStats() { return { ...this.stats, rateLimiter: this.rateLimiter.getStats(), proxies: this.proxyManager.getAll() }; }
