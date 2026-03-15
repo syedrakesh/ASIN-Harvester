@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASIN Harvester</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24;
+    --border: #2a2a3a; --accent: #f97316; --accent2: #fb923c;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+    --text: #f1f0ff; --muted: #6b6b85; --card: #13131d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(249,115,22,0.08) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+
+  header {
+    padding: 18px 32px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,15,0.85); backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo-icon { width: 34px; height: 34px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .logo span { color: var(--accent); }
+  .header-stats { display: flex; gap: 18px; }
+  .stat-pill { display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+  .dot-orange { background: var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .app { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 63px); position: relative; z-index: 1; }
+
+  /* SIDEBAR */
+  .sidebar { border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; background: var(--surface); }
+  .sidebar::-webkit-scrollbar { width: 3px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .section-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 5px; }
+  input, textarea, select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 8px 10px; outline: none; transition: border-color 0.2s; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(249,115,22,0.1); }
+  textarea { resize: vertical; min-height: 90px; }
+  select option { background: var(--surface2); }
+  .field-group { margin-bottom: 12px; }
+  .field-group:last-child { margin-bottom: 0; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 12px; font-weight: 600; }
+  .toggle-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .toggle { width: 38px; height: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; position: relative; transition: all 0.2s; flex-shrink: 0; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: white; border-radius: 50%; transition: transform 0.2s; }
+  .toggle.on::after { transform: translateX(18px); }
+
+  .proxy-list { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .proxy-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--surface2); border-radius: 6px; margin-bottom: 4px; }
+  .proxy-status { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .proxy-addr { flex: 1; color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proxy-ping { color: var(--green); font-size: 10px; flex-shrink: 0; }
+  .proxy-remove { cursor: pointer; color: var(--red); font-size: 12px; flex-shrink: 0; opacity: 0.5; }
+  .proxy-remove:hover { opacity: 1; }
+
+  .btn { width: 100%; padding: 11px; border: none; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent2); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(249,115,22,0.4); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-sm { padding: 6px 12px; font-size: 11px; border-radius: 7px; width: auto; }
+
+  .chip-group { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chip { padding: 4px 9px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .chip.selected { background: rgba(249,115,22,0.2); border-color: var(--accent); color: var(--accent); }
+
+  /* MAIN */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 24px; background: var(--surface); }
+  .tab { padding: 13px 18px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; position: relative; top: 1px; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--text); }
+  .badge { display: inline-block; background: var(--accent); color: white; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 10px; margin-left: 5px; vertical-align: middle; }
+
+  .content { flex: 1; overflow-y: auto; padding: 22px; }
+  .content::-webkit-scrollbar { width: 4px; }
+  .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .progress-section { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  .progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .progress-title { font-size: 14px; font-weight: 700; }
+  .progress-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+  .status-idle { background: var(--surface2); color: var(--muted); }
+  .status-running { background: rgba(249,115,22,0.15); color: var(--accent); border: 1px solid rgba(249,115,22,0.3); }
+  .status-done { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .status-error { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .progress-bar-wrap { background: var(--surface2); border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 8px; }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 6px; transition: width 0.4s; }
+  .progress-meta { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  .metric { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; position: relative; overflow: hidden; }
+  .metric::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .metric-scraped::before { background: var(--accent); }
+  .metric-success::before { background: var(--green); }
+  .metric-failed::before { background: var(--red); }
+  .metric-rate::before { background: #818cf8; }
+  .metric-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .metric-value { font-size: 28px; font-weight: 800; line-height: 1; }
+  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+  .metric-scraped .metric-value { color: var(--accent); }
+  .metric-success .metric-value { color: var(--green); }
+  .metric-failed .metric-value { color: var(--red); }
+  .metric-rate .metric-value { color: #818cf8; }
+
+  /* TABLE */
+  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .table-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .table-header-left { font-size: 13px; font-weight: 700; }
+  .table-actions { display: flex; gap: 8px; align-items: center; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 9px 14px; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); background: var(--surface2); border-bottom: 1px solid var(--border); }
+  td { padding: 11px 14px; font-size: 12px; border-bottom: 1px solid rgba(42,42,58,0.5); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(249,115,22,0.04); }
+  .asin-code { font-family: 'JetBrains Mono', monospace; font-size: 10px; background: var(--surface2); padding: 2px 7px; border-radius: 4px; color: var(--accent); }
+  .product-title { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .price { font-weight: 700; color: var(--green); font-family: 'JetBrains Mono', monospace; }
+  .rating-stars { color: var(--yellow); }
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+  .badge-ok { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-fail { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  .log-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .log-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .log-title { font-size: 12px; font-weight: 700; }
+  .log-body { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 10px 14px; max-height: 220px; overflow-y: auto; line-height: 1.7; }
+  .log-body::-webkit-scrollbar { width: 3px; }
+  .log-body::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-ok { color: var(--green); }
+  .log-err { color: var(--red); }
+  .log-warn { color: var(--yellow); }
+  .log-info { color: #818cf8; }
+
+  .export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .export-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; cursor: pointer; transition: all 0.2s; text-align: center; }
+  .export-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(249,115,22,0.15); }
+  .export-icon { font-size: 26px; margin-bottom: 8px; }
+  .export-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .export-desc { font-size: 10px; color: var(--muted); }
+
+  .rate-viz { display: flex; gap: 3px; flex-wrap: wrap; }
+  .rate-block { width: 12px; height: 12px; border-radius: 3px; background: var(--surface2); border: 1px solid var(--border); transition: background 0.3s; }
+  .rate-block.used { background: var(--accent); border-color: var(--accent2); }
+
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-icon { font-size: 42px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-text { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .empty-sub { font-size: 12px; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; font-weight: 600; z-index: 9999; animation: slideIn 0.3s ease; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  .toast-ok { border-left: 3px solid var(--green); }
+  .toast-err { border-left: 3px solid var(--red); }
+  .toast-warn { border-left: 3px solid var(--yellow); }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🕸</div>
+    ASIN <span>Harvester</span>
+  </div>
+  <div class="header-stats">
+    <div class="stat-pill"><div class="dot dot-green"></div><span id="hdr-conn">Connecting...</span></div>
+    <div class="stat-pill"><div class="dot dot-orange"></div><span id="hdr-proxies">0 Proxies</span></div>
+    <div class="stat-pill" style="font-family:'JetBrains Mono',monospace">⏱ <span id="hdr-timer">00:00:00</span></div>
+  </div>
+</header>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <div>
+      <div class="section-title">🎯 Scrape Targets</div>
+      <div class="card">
+        <div class="field-group">
+          <label>TARGET MODE</label>
+          <select id="target-mode" onchange="updateTargetMode()">
+            <option value="asin">ASIN List</option>
+            <option value="search">Search Keywords</option>
+          </select>
+        </div>
+        <div class="field-group" id="asin-field">
+          <label>ASIN CODES (one per line)</label>
+          <textarea id="asin-input" placeholder="B08N5WRWNW&#10;B09G9FPTP1&#10;B07PDHSLM6"></textarea>
+        </div>
+        <div class="field-group" id="search-field" style="display:none">
+          <label>KEYWORDS (one per line)</label>
+          <textarea id="keyword-input" placeholder="wireless earbuds&#10;gaming laptop"></textarea>
+        </div>
+        <div class="field-group">
+          <label>MARKETPLACE</label>
+          <select id="marketplace">
+            <option value="com">.com (US)</option>
+            <option value="co.uk">.co.uk (UK)</option>
+            <option value="de">.de (Germany)</option>
+            <option value="co.jp">.co.jp (Japan)</option>
+            <option value="ca">.ca (Canada)</option>
+            <option value="com.au">.com.au (Australia)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">📦 Data Fields</div>
+      <div class="card">
+        <div class="chip-group" id="field-chips">
+          <span class="chip selected" data-field="title">Title</span>
+          <span class="chip selected" data-field="price">Price</span>
+          <span class="chip selected" data-field="rating">Rating</span>
+          <span class="chip selected" data-field="reviews">Reviews</span>
+          <span class="chip" data-field="images">Images</span>
+          <span class="chip" data-field="description">Description</span>
+          <span class="chip" data-field="features">Features</span>
+          <span class="chip" data-field="seller">Seller</span>
+          <span class="chip" data-field="sku">Variants</span>
+          <span class="chip" data-field="bsr">BSR Rank</span>
+          <span class="chip" data-field="qa">Q&A</span>
+          <span class="chip" data-field="dimensions">Dimensions</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">⚡ Rate Limiting</div>
+      <div class="card">
+        <div class="field-group">
+          <label>REQUESTS / MIN: <span id="rpm-val" style="color:var(--accent)">20</span></label>
+          <input type="range" id="rpm-slider" min="5" max="60" value="20"
+            style="padding:5px 0;background:transparent;border:none;box-shadow:none;accent-color:var(--accent)"
+            oninput="document.getElementById('rpm-val').textContent=this.value">
+        </div>
+        <div class="field-group">
+          <label>JITTER MAX: <span id="jitter-val" style="color:var(--accent)">1.5s</span></label>
+          <input type="range" id="jitter-slider" min="0" max="50" value="15"
+            style="padding:5px 0;background:transparent;border:none;box-shadow:none;accent-color:var(--accent)"
+            oninput="document.getElementById('jitter-val').textContent=(this.value/10).toFixed(1)+'s'">
+        </div>
+        <div class="field-group">
+          <label>RATE WINDOW (60s view)</label>
+          <div class="rate-viz" id="rate-viz"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">🌐 Proxies</div>
+      <div class="card">
+        <div class="toggle-row">
+          <div><div class="toggle-label">Rotate Proxies</div><div class="toggle-sub">Round-robin</div></div>
+          <div class="toggle on" id="toggle-rotate" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Sticky Sessions</div><div class="toggle-sub">Same proxy per ASIN</div></div>
+          <div class="toggle" id="toggle-sticky" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Auto-retire Failed</div><div class="toggle-sub">Remove dead proxies</div></div>
+          <div class="toggle on" id="toggle-retire" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div style="margin-top:12px">
+          <div class="section-title" style="margin-bottom:8px">PROXY LIST</div>
+          <div class="proxy-list" id="proxy-list">
+            <div style="color:var(--muted);font-size:11px;font-family:'JetBrains Mono',monospace;padding:4px">No proxies added. Running direct.</div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <input type="text" placeholder="host:port or user:pass@host:port" id="new-proxy" style="font-size:11px">
+            <button class="btn btn-secondary btn-sm" onclick="addProxy()">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">⚙ Options</div>
+      <div class="card">
+        <div class="toggle-row">
+          <div><div class="toggle-label">Retry on Fail</div><div class="toggle-sub">Up to 3 attempts</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Random User Agent</div><div class="toggle-sub">Rotate UA strings</div></div>
+          <div class="toggle on" id="toggle-ua" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="toggle-row">
+          <div><div class="toggle-label">Captcha Detection</div><div class="toggle-sub">Pause on CAPTCHA</div></div>
+          <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="start-btn" onclick="startScrape()" style="font-size:14px;padding:14px;letter-spacing:1px">
+      ▶ START SCRAPING
+    </button>
+    <button class="btn btn-secondary" id="stop-btn" onclick="stopScrape()" disabled>
+      ■ STOP
+    </button>
+
+  </div>
+
+  <!-- MAIN PANEL -->
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('overview',this)">Overview</div>
+      <div class="tab" onclick="switchTab('results',this)">Results <span class="badge" id="results-badge">0</span></div>
+      <div class="tab" onclick="switchTab('logs',this)">Logs</div>
+      <div class="tab" onclick="switchTab('export',this)">Export</div>
+    </div>
+
+    <div class="content">
+
+      <!-- OVERVIEW -->
+      <div class="tab-pane active" id="tab-overview">
+        <div class="progress-section">
+          <div class="progress-header">
+            <div class="progress-title">Scraping Progress</div>
+            <div class="progress-status status-idle" id="status-badge">● IDLE</div>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="main-progress" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="progress-label">Ready to scrape</span>
+            <span id="progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric metric-scraped">
+            <div class="metric-label">Scraped</div>
+            <div class="metric-value" id="m-scraped">0</div>
+            <div class="metric-sub">of <span id="m-total">0</span> targets</div>
+          </div>
+          <div class="metric metric-success">
+            <div class="metric-label">Success</div>
+            <div class="metric-value" id="m-success">0</div>
+            <div class="metric-sub" id="m-success-pct">0% rate</div>
+          </div>
+          <div class="metric metric-failed">
+            <div class="metric-label">Failed</div>
+            <div class="metric-value" id="m-failed">0</div>
+            <div class="metric-sub" id="m-retry">0 retried</div>
+          </div>
+          <div class="metric metric-rate">
+            <div class="metric-label">Avg Speed</div>
+            <div class="metric-value" id="m-speed">—</div>
+            <div class="metric-sub">req/min</div>
+          </div>
+        </div>
+
+        <div class="log-panel">
+          <div class="log-header">
+            <div class="log-title">📟 Activity Log</div>
+            <button class="btn btn-secondary btn-sm" onclick="clearLog('log-body')">Clear</button>
+          </div>
+          <div class="log-body" id="log-body"></div>
+        </div>
+      </div>
+
+      <!-- RESULTS -->
+      <div class="tab-pane" id="tab-results">
+        <div class="table-wrap">
+          <div class="table-header">
+            <div class="table-header-left">📋 Scraped Products</div>
+            <div class="table-actions">
+              <input type="text" placeholder="Search..." style="width:160px;padding:5px 9px;font-size:11px" id="search-results" oninput="filterResults()">
+            </div>
+          </div>
+          <div id="results-table-wrap">
+            <div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">No results yet</div><div class="empty-sub">Start scraping to see product data here</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGS -->
+      <div class="tab-pane" id="tab-logs">
+        <div class="log-panel" style="border-radius:14px">
+          <div class="log-header">
+            <div class="log-title">📟 Full Log</div>
+            <div style="display:flex;gap:8px">
+              <select style="padding:5px 8px;font-size:11px;width:auto" id="log-filter">
+                <option value="all">All</option><option value="ok">Success</option><option value="err">Errors</option><option value="warn">Warnings</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" onclick="clearLog('full-log')">Clear</button>
+            </div>
+          </div>
+          <div class="log-body" id="full-log" style="max-height:calc(100vh - 250px)"></div>
+        </div>
+      </div>
+
+      <!-- EXPORT -->
+      <div class="tab-pane" id="tab-export">
+        <div class="export-grid">
+          <div class="export-card" onclick="doExport('csv')"><div class="export-icon">📊</div><div class="export-name">CSV</div><div class="export-desc">Excel / Google Sheets compatible</div></div>
+          <div class="export-card" onclick="doExport('json')"><div class="export-icon">{ }</div><div class="export-name">JSON</div><div class="export-desc">Structured data for APIs</div></div>
+          <div class="export-card" onclick="doExport('xlsx')"><div class="export-icon">📗</div><div class="export-name">Excel</div><div class="export-desc">Formatted .xlsx with headers</div></div>
+          <div class="export-card" onclick="doExport('tsv')"><div class="export-icon">📑</div><div class="export-name">TSV</div><div class="export-desc">Tab-separated for databases</div></div>
+          <div class="export-card" onclick="doExport('ndjson')"><div class="export-icon">📄</div><div class="export-name">NDJSON</div><div class="export-desc">Stream-friendly newline-delimited</div></div>
+          <div class="export-card" onclick="doExport('xml')"><div class="export-icon">🏷</div><div class="export-name">XML</div><div class="export-desc">Structured markup format</div></div>
+        </div>
+        <div class="card">
+          <div class="section-title" style="margin-bottom:12px">EXPORT SETTINGS</div>
+          <div class="field-group">
+            <label>OUTPUT FILENAME</label>
+            <input type="text" value="amazon_products" id="export-filename">
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Flatten Nested Objects</div><div class="toggle-sub">Arrays become | separated values</div></div>
+            <div class="toggle on" id="toggle-flatten" onclick="this.classList.toggle('on')"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Socket.io ─────────────────────────────────────────────────────────────────
+const socket = io();
+let elapsed = 0, timerInterval = null;
+let resultCount = 0;
+const proxyList = [];
+
+socket.on('connect', () => {
+  document.getElementById('hdr-conn').textContent = 'Server Online';
+  addLog('info', 'Connected to ASIN Harvester server.', 'log-body');
+  addLog('info', 'Connected to ASIN Harvester server.', 'full-log');
+});
+socket.on('disconnect', () => {
+  document.getElementById('hdr-conn').textContent = 'Disconnected';
+});
+socket.on('log', ({ type, msg }) => {
+  addLog(type, msg, 'log-body');
+  addLog(type, msg, 'full-log');
+});
+socket.on('scrape:start', ({ total }) => {
+  document.getElementById('m-total').textContent = total;
+  setStatus('running');
+  elapsed = 0;
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    elapsed++;
+    document.getElementById('hdr-timer').textContent = formatTime(elapsed);
+    const slot = elapsed % 60;
+    document.querySelectorAll('.rate-block').forEach((b, i) => {
+      b.classList.toggle('used', i < slot);
+    });
+  }, 1000);
+});
+socket.on('scrape:progress', ({ current, total, pct, result, stats }) => {
+  document.getElementById('main-progress').style.width = pct + '%';
+  document.getElementById('progress-pct').textContent = pct + '%';
+  document.getElementById('progress-label').textContent = `Scraped ${current} of ${total} products`;
+  document.getElementById('m-scraped').textContent = stats.scraped;
+  document.getElementById('m-success').textContent = stats.success;
+  document.getElementById('m-failed').textContent = stats.failed;
+  document.getElementById('m-retry').textContent = stats.retried + ' retried';
+  const rate = elapsed > 0 ? Math.round((stats.scraped / elapsed) * 60) : 0;
+  document.getElementById('m-speed').textContent = rate;
+  const sp = (stats.success + stats.failed) > 0 ? Math.round(stats.success / (stats.success + stats.failed) * 100) : 0;
+  document.getElementById('m-success-pct').textContent = sp + '% rate';
+
+  if (result.ok) {
+    resultCount++;
+    document.getElementById('results-badge').textContent = resultCount;
+    appendResultRow(result.data);
+  }
+});
+socket.on('scrape:complete', ({ stats, total }) => {
+  clearInterval(timerInterval);
+  setStatus('done');
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled = true;
+  showToast(`✓ Done! ${total} products scraped`, 'ok');
+});
+socket.on('scrape:error', ({ error }) => {
+  clearInterval(timerInterval);
+  setStatus('error');
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled = true;
+  showToast('Error: ' + error, 'err');
+});
+
+// ── UI Helpers ────────────────────────────────────────────────────────────────
+function formatTime(s) {
+  return [Math.floor(s/3600), Math.floor((s%3600)/60), s%60].map(n => String(n).padStart(2,'0')).join(':');
+}
+function setStatus(s) {
+  const el = document.getElementById('status-badge');
+  el.className = 'progress-status';
+  const map = { running:['status-running','● RUNNING'], done:['status-done','✓ COMPLETE'], error:['status-error','✗ ERROR'], idle:['status-idle','● IDLE'] };
+  el.classList.add(map[s][0]); el.textContent = map[s][1];
+}
+function addLog(type, msg, target) {
+  const time = formatTime(elapsed);
+  const cls = {ok:'log-ok',err:'log-err',warn:'log-warn',info:'log-info'}[type] || 'log-info';
+  const el = document.getElementById(target);
+  if (!el) return;
+  el.innerHTML += `<div class="log-line"><span class="log-time">${time}</span><span class="${cls}">${msg}</span></div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog(id) { document.getElementById(id).innerHTML = ''; }
+function showToast(msg, type = 'ok') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+}
+function updateTargetMode() {
+  const m = document.getElementById('target-mode').value;
+  document.getElementById('asin-field').style.display = m === 'asin' ? 'block' : 'none';
+  document.getElementById('search-field').style.display = m === 'search' ? 'block' : 'none';
+}
+
+// ── Rate viz ──────────────────────────────────────────────────────────────────
+const rateViz = document.getElementById('rate-viz');
+for (let i = 0; i < 60; i++) {
+  const b = document.createElement('div');
+  b.className = 'rate-block';
+  rateViz.appendChild(b);
+}
+
+// ── Chips ─────────────────────────────────────────────────────────────────────
+document.querySelectorAll('#field-chips .chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('selected')));
+
+// ── Proxies ───────────────────────────────────────────────────────────────────
+function addProxy() {
+  const val = document.getElementById('new-proxy').value.trim();
+  if (!val) return;
+  proxyList.push(val);
+  renderProxies();
+  document.getElementById('new-proxy').value = '';
+  document.getElementById('hdr-proxies').textContent = proxyList.length + ' Proxies';
+  addLog('info', `Proxy added: ${val}`, 'log-body');
+}
+function removeProxy(i) {
+  proxyList.splice(i, 1);
+  renderProxies();
+  document.getElementById('hdr-proxies').textContent = proxyList.length + ' Proxies';
+}
+function renderProxies() {
+  const el = document.getElementById('proxy-list');
+  if (!proxyList.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:11px;font-family:\'JetBrains Mono\',monospace;padding:4px">No proxies added. Running direct.</div>';
+    return;
+  }
+  el.innerHTML = proxyList.map((p, i) => `
+    <div class="proxy-item">
+      <div class="proxy-status" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>
+      <div class="proxy-addr">${p}</div>
+      <div class="proxy-remove" onclick="removeProxy(${i})">✕</div>
+    </div>`).join('');
+}
+
+// ── Start/Stop ────────────────────────────────────────────────────────────────
+async function startScrape() {
+  const mode = document.getElementById('target-mode').value;
+  const asins = document.getElementById('asin-input').value.trim().split('\n').map(s => s.trim()).filter(Boolean);
+  const keywords = document.getElementById('keyword-input').value.trim().split('\n').map(s => s.trim()).filter(Boolean);
+
+  if (mode === 'asin' && !asins.length) { showToast('No ASINs provided!', 'warn'); return; }
+  if (mode === 'search' && !keywords.length) { showToast('No keywords provided!', 'warn'); return; }
+
+  const fields = [...document.querySelectorAll('#field-chips .chip.selected')].map(c => c.dataset.field);
+  const rpm = parseInt(document.getElementById('rpm-slider').value);
+  const jitterMs = parseInt(document.getElementById('jitter-slider').value) * 100;
+  const marketplace = document.getElementById('marketplace').value;
+
+  resultCount = 0;
+  document.getElementById('results-badge').textContent = '0';
+  document.getElementById('results-table-wrap').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Scraping in progress...</div></div>';
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('stop-btn').disabled = false;
+
+  const body = { mode, asins, keywords, marketplace, rpm, jitterMs, maxRetries: 3, proxies: proxyList, fields, stickyProxies: document.getElementById('toggle-sticky').classList.contains('on') };
+
+  try {
+    const r = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { const e = await r.json(); showToast(e.error, 'err'); document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true; }
+  } catch (e) { showToast('Server error: ' + e.message, 'err'); document.getElementById('start-btn').disabled = false; document.getElementById('stop-btn').disabled = true; }
+}
+async function stopScrape() {
+  await fetch('/api/stop', { method: 'POST' });
+  clearInterval(timerInterval);
+  setStatus('idle');
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled = true;
+}
+
+// ── Results Table ─────────────────────────────────────────────────────────────
+function appendResultRow(p) {
+  let tbody = document.querySelector('#results-table-wrap tbody');
+  if (!tbody) {
+    document.getElementById('results-table-wrap').innerHTML = `
+      <table>
+        <thead><tr>
+          <th>ASIN</th><th>Product</th><th>Price</th><th>Rating</th><th>Reviews</th><th>BSR</th><th>Status</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>`;
+    tbody = document.querySelector('#results-table-wrap tbody');
+  }
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><span class="asin-code">${p.asin || '—'}</span></td>
+    <td><div class="product-title" title="${p.title || ''}">${p.title || '—'}</div></td>
+    <td class="price">${p.price || '—'}</td>
+    <td><span class="rating-stars">${'★'.repeat(Math.round(p.rating || 0))}</span> ${p.rating || '—'}</td>
+    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${(p.review_count || 0).toLocaleString()}</td>
+    <td style="font-size:11px;color:var(--muted)">${p.bsr_rank ? '#' + p.bsr_rank.toLocaleString() : '—'}</td>
+    <td><span class="status-badge badge-ok">✓ OK</span></td>`;
+  tbody.appendChild(tr);
+}
+function filterResults() {
+  const q = document.getElementById('search-results').value.toLowerCase();
+  document.querySelectorAll('#results-table-wrap tbody tr').forEach(r => {
+    r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+async function doExport(format) {
+  const filename = document.getElementById('export-filename').value || 'amazon_products';
+  const flattenNested = document.getElementById('toggle-flatten').classList.contains('on');
+  try {
+    const r = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format, filename, flattenNested }) });
+    if (!r.ok) { const e = await r.json(); showToast(e.error, 'err'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fname = `${filename}.${format}`;
+    a.href = url; a.download = fname; a.click();
+    URL.revokeObjectURL(url);
+    showToast(`✓ Exported as ${fname}`, 'ok');
+  } catch (e) { showToast('Export failed: ' + e.message, 'err'); }
+}
+</script>
+</body>
+</html>
